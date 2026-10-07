@@ -45,9 +45,13 @@ public final class ContextBuilder {
         for (Profession p : Profession.values()) sb.append(p.name()).append(", ");
         sb.append("\nCargos (office): ");
         for (Office o : Office.values()) if (o != Office.NONE && o != Office.KING) sb.append(o.name()).append(", ");
-        sb.append("\nPlanta personalizada: BUILD com blueprint=custom e kind (casa, quartel, forja, armazem, salao, torre, capela, taverna), ")
-                .append("width/depth 5-15, floors 1-3, roof (plano|piramide|duas_aguas), wall e roof_material (")
-                .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false).");
+        sb.append("\nPlanta personalizada: BUILD com blueprint=custom e kind (casa, quartel, forja, armazem, salao, torre, capela, taverna, celeiro, ")
+                .append("estabulo, poco, mercado, biblioteca, oficina, generic), name (o nome que o rei usou), ")
+                .append("width/depth 5-21, floors 1-4, roof (plano|piramide|duas_aguas), wall e roof_material (")
+                .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false). ")
+                .append("O rei pode pedir QUALQUER construção: se não está nas plantas, crie com blueprint=custom, o kind mais parecido (ou generic) ")
+                .append("e name com o nome pedido (\"Observatório\", \"Estufa\"); traduza \"grande\", \"12x8\", \"3 andares\", \"de pedra\" em width/depth/floors/wall. ")
+                .append("Fora da faixa o jogo ajusta e avisa. Se o rei falar com um construtor, ele mesmo vai à obra.");
         sb.append("\nORDENS COM AS MÃOS (JOB): quebrar/cavar/túnel/limpar área, cortar árvore, pegar/guardar em baú, fabricar (receitas do Minecraft) e entregar ao rei. ")
                 .append("Lugares vêm da MIRA do rei (veja \"Mira do rei\" em WORLD DATA). Itens em português ou id (\"picareta de ferro\", \"minecraft:torch\"). ")
                 .append("Ex.: JOB(kind=craft, item=picareta de ferro, give=true) — o jogo busca os ingredientes no baú e faz gravetos/tábuas se faltar. ")
@@ -55,6 +59,11 @@ public final class ContextBuilder {
         sb.append("\nMarcos: MARK(kind=spawn|praca|mina|bosque) marca o ponto que o rei mira — spawn = onde chegam moradores e o rei renasce.");
         sb.append("\nMuralha: BUILD com blueprint=muralha (height 3-6) — o jogo mede a vila (veja \"Vila:\" em WORLD DATA) e cerca tudo; não invente coordenadas.");
         sb.append("\nChamar alguém até o rei: SUMMON(npc); acompanhar: FOLLOW(npc, minutes); dispensar: DISMISS(npc).");
+        sb.append("\nORDENS QUE SE VEEM: TRAIN (o NPC que recebeu a ordem escolhe quem treina, convoca se faltar, leva ao campo e treina em formação); ")
+                .append("MOVE(to, who) leva gente de verdade a um lugar e eles ficam lá; COLETA: JOB(kind=gather, item=pedra|terra|areia|carvao|ferro|madeira, count) ")
+                .append("ou JOB(kind=clear_trees, around=vila) — o súdito vai, quebra/derruba, replanta e guarda no armazém. ")
+                .append("HIERARQUIA: o rei pode dar várias ordens numa frase; proponha uma ação para cada. \"Cuide da comida/moradia/defesa/madeira/pedra\" = GOAL(goal): ")
+                .append("o conselho avalia e executa os passos. Sem npc, o jogo passa cada tarefa a quem é competente (construtor livre, capitão, minerador).");
         sb.append("\nGUERRA E DOMÍNIO (é um jogo de estratégia medieval; o rei tem liberdade total e o jogo cobra as consequências): ")
                 .append("o exército não custa ouro, custa comida. RECRUIT sem amount = o general/capitão decide quantos e quem. ")
                 .append("Terra livre: CLAIM até o limite (veja \"Terra\" em WORLD DATA); além dele a terra se toma: SETTLE (colonos) ou ATTACK/OCCUPY (tropas; ")

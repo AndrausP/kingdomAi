@@ -108,7 +108,7 @@ public final class EconomySystem {
                 case PEASANT -> add(d, ResourceType.FOOD, 0.8 * f);
                 // Exército não custa ouro: custa comida. Soldado come 2 (3 em campanha: carroças até o front); guarda 1,5.
                 case SOLDIER -> add(d, ResourceType.FOOD, -(com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD - FOOD_PER_CITIZEN)
-                        - (n.campaignId != null ? com.kingdomsai.core.military.MilitarySystem.CAMPAIGN_EXTRA_FOOD : 0));
+                        - (core.warfare().atWar(n) ? com.kingdomsai.core.military.MilitarySystem.CAMPAIGN_EXTRA_FOOD : 0));
                 case GUARD -> add(d, ResourceType.FOOD, -(com.kingdomsai.core.military.MilitarySystem.GUARD_FOOD - FOOD_PER_CITIZEN));
                 default -> {
                 }

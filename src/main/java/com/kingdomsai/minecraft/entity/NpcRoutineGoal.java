@@ -62,7 +62,8 @@ public class NpcRoutineGoal extends Goal {
 
         if (--recalc <= 0) {
             // chamado/seguindo: recalcula mais vezes para acompanhar o rei
-            recalc = n.activity == NpcActivity.SUMMONED ? 20 : 40 + mob.getRandom().nextInt(40);
+            recalc = n.activity == NpcActivity.SUMMONED || n.activity == NpcActivity.MARCH || n.activity == NpcActivity.TRAIN
+                    ? 20 : 40 + mob.getRandom().nextInt(40);
             NpcScheduler.Intent intent = rt.core().scheduler().decide(n, mob.level().getDayTime() % 24000);
             n.activity = intent.activity();
             Pos t = intent.target();
@@ -70,6 +71,13 @@ public class NpcRoutineGoal extends Goal {
                 double jitter = Math.max(1, intent.radius());
                 int x = t.x() + (int) Math.round((mob.getRandom().nextDouble() * 2 - 1) * jitter);
                 int z = t.z() + (int) Math.round((mob.getRandom().nextDouble() * 2 - 1) * jitter);
+                if (!mob.level().isLoaded(new BlockPos(x, 0, z))) {
+                    // Destino num chunk não carregado (marcha longa, mina distante): anda na direção dele pelo trecho
+                    // carregado, 24 blocos por vez. Ao sair do raio de detalhe vira NPC abstrato e segue no Core.
+                    double dx = x - mob.getX(), dz = z - mob.getZ(), len = Math.max(1, Math.sqrt(dx * dx + dz * dz));
+                    x = (int) Math.round(mob.getX() + dx / len * Math.min(24, len));
+                    z = (int) Math.round(mob.getZ() + dz / len * Math.min(24, len));
+                }
                 if (mob.level().isLoaded(new BlockPos(x, 0, z))) {
                     int y = mob.level().getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
                     target = new BlockPos(x, y, z);
@@ -82,7 +90,7 @@ public class NpcRoutineGoal extends Goal {
         if (dist > radius + 1) {
             if (mob.getNavigation().isDone() || mob.tickCount % 60 == 0) {
                 double speed = n.activity == NpcActivity.SUMMONED ? 0.8 : n.activity == NpcActivity.MARCH ? 0.75
-                        : n.activity == NpcActivity.PATROL ? 0.6 : 0.55;
+                        : n.activity == NpcActivity.TRAIN ? 0.7 : n.activity == NpcActivity.PATROL ? 0.6 : 0.55;
                 mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
             }
             // anti-travamento: se não progride por 30s, teleporta para perto do destino

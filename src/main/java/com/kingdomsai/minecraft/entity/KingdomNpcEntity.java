@@ -118,7 +118,9 @@ public class KingdomNpcEntity extends PathfinderMob {
         setItemSlot(EquipmentSlot.HEAD, npc.office == Office.KING ? new ItemStack(Items.GOLDEN_HELMET)
                 : npc.profession == Profession.GUARD ? new ItemStack(Items.IRON_HELMET)
                 : npc.profession == Profession.SOLDIER ? new ItemStack(Items.CHAINMAIL_HELMET) : ItemStack.EMPTY);
-        setItemSlot(EquipmentSlot.CHEST, npc.profession == Profession.SOLDIER ? new ItemStack(Items.IRON_CHESTPLATE) : ItemStack.EMPTY);
+        // peitoral só para quem recebeu arma do arsenal; cativo/escravizado não usa equipamento militar
+        boolean armed = !npc.equipped.isEmpty() && npc.isFree();
+        setItemSlot(EquipmentSlot.CHEST, npc.profession == Profession.SOLDIER && armed ? new ItemStack(Items.IRON_CHESTPLATE) : ItemStack.EMPTY);
         for (EquipmentSlot s : EquipmentSlot.values()) setDropChance(s, 0f);
     }
 
@@ -153,7 +155,7 @@ public class KingdomNpcEntity extends PathfinderMob {
             case MINER -> new ItemStack(Items.IRON_PICKAXE);
             case BLACKSMITH -> new ItemStack(Items.IRON_INGOT);
             case BUILDER -> new ItemStack(Items.OAK_PLANKS);
-            case GUARD, SOLDIER -> new ItemStack(Items.IRON_SWORD);
+            case GUARD, SOLDIER -> n.equipped.isEmpty() ? new ItemStack(Items.WOODEN_SWORD) : new ItemStack(Items.IRON_SWORD); // sem arma do arsenal: espada de treino
             case MERCHANT -> new ItemStack(Items.EMERALD);
             case PRIEST, SCHOLAR -> new ItemStack(Items.BOOK);
             default -> ItemStack.EMPTY;
@@ -166,7 +168,7 @@ public class KingdomNpcEntity extends PathfinderMob {
     }
 
     /** Último item de cadeia mostrado na mão (troca na hora em que a etapa muda). */
-    private String shownHeld = "";
+    private String shownHeld = "", shownEquip = "";
 
     public boolean isTalking() {
         return level().getGameTime() < talkingUntil;
@@ -189,8 +191,9 @@ public class KingdomNpcEntity extends PathfinderMob {
         }
         n.pos = new Pos(getBlockX(), getBlockY(), getBlockZ());
         n.materialized = true;
-        if (tickCount % 100 == 0 || !n.heldItem.equals(shownHeld)) {
+        if (tickCount % 100 == 0 || !n.heldItem.equals(shownHeld) || !n.equipped.equals(shownEquip)) {
             shownHeld = n.heldItem;
+            shownEquip = n.equipped;
             refreshAppearance(n);
         }
     }

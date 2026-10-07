@@ -204,7 +204,7 @@ public final class Validators {
             case RECRUIT -> {
                 int candidates = 0;
                 for (Npc n : core.citizens(k.id))
-                    if (!n.profession.isMilitary() && n.office == Office.NONE && n.isFree() && n.campaignId == null) candidates++;
+                    if (!n.profession.isMilitary() && n.office == Office.NONE && n.isFree() && !core.warfare().atWar(n)) candidates++;
                 if (candidates == 0) return ActionResult.reject("not_enough_people", "Não há civis livres para convocar.");
                 if (r.param("amount") != null && candidates < r.intParam("amount", 1))
                     return ActionResult.reject("not_enough_people", "Só há " + candidates + " civis livres para convocar.");
@@ -225,6 +225,26 @@ public final class Validators {
                     return ActionResult.reject("no_troops", "Não há soldados em casa para mandar"
                             + (core.count(k.id, Profession.GUARD) > 0 && !"true".equalsIgnoreCase(r.param("guards")) ? " (os guardas ficam na vila; diga \"leve os guardas\")" : "")
                             + ". Convoque primeiro (RECRUIT): não custa ouro, custa comida.");
+            }
+            case GOAL -> {
+                if (com.kingdomsai.core.ai.KingdomDirector.goalOf(r.param("goal")) == null)
+                    return ActionResult.reject("invalid_param", "Objetivo desconhecido: " + r.param("goal") + " (comida, moradia, defesa, madeira, pedra, trabalho, territorio).");
+                if (r.actorKind() != ActionRequest.ActorKind.PLAYER)
+                    return ActionResult.reject("permission_denied", "Só o rei delega objetivos ao conselho.");
+            }
+            case TRAIN -> {
+                Npc inst = trainer(core, k, r);
+                if (inst == null) return ActionResult.reject("not_found", r.param("npc") != null ? "Não encontrei " + r.param("npc") + "."
+                        : "Não há ninguém para instruir a tropa: nomeie um capitão ou fale com um soldado.");
+                if (!inst.isFree()) return ActionResult.reject("not_free", inst.name + " não é livre para comandar.");
+                Target t = place(core, k, r, r.param("where") == null ? "campo" : r.param("where"));
+                if (t.error() != null) return ActionResult.reject("invalid_target", t.error());
+            }
+            case MOVE -> {
+                Target t = place(core, k, r, r.param("to"));
+                if (t.error() != null) return ActionResult.reject("invalid_target", t.error());
+                if (movers(core, k, r).isEmpty())
+                    return ActionResult.reject("not_found", "Não encontrei quem deve ir" + (r.param("who") != null ? " (\"" + r.param("who") + "\")" : "") + ".");
             }
             case RETREAT -> {
                 var c = core.warfare().find(k.id, r.param("campaign"));
@@ -380,13 +400,100 @@ public final class Validators {
         return best;
     }
 
+    /** Instrutor do treino: quem o rei mandou; senão general/capitão; senão o soldado mais experiente. */
+    public static Npc trainer(KingdomsCore core, Kingdom k, ActionRequest r) {
+        if (r.param("npc") != null && !r.param("npc").isBlank()) return core.findNpc(k.id, r.param("npc"));
+        return core.warfare().commander(k, null);
+    }
+
+    /**
+     * Lugar de uma ordem de ir/treinar: aqui (onde o rei está/mira), praça, quartel, mina, bosque, spawn, forja, armazém, fazenda,
+     * campo (de treino: quartel ou a borda da vila), o nome de alguém ou "x z".
+     */
+    public static Target place(KingdomsCore core, Kingdom k, ActionRequest r, String where) {
+        String w = com.kingdomsai.core.common.Text.norm(where == null ? "" : where).replaceAll("^(o|a|na|no|para o|para a|pra|ao|ate o|ate a)\\s+", "");
+        if (w.isBlank()) return new Target(null, null, "Para onde? (aqui, praça, quartel, mina, bosque, campo ou x z)");
+        com.kingdomsai.core.common.Pos p = null;
+        if (w.matches("(aqui|ca|la|ali|onde estou|onde eu estou|perto de mim|comigo|here)")) {
+            if (r.actorKind() != ActionRequest.ActorKind.PLAYER) return new Target(null, null, "\"Aqui\" depende de onde o rei está.");
+            KingdomsCore.Look look = core.playerLook(r.actorId());
+            p = look != null && look.block() != null ? look.block().offset(0, 1, 0) : core.playerPos(r.actorId());
+            if (p == null) return new Target(null, null, "Não sei onde Vossa Majestade está agora.");
+        } else if (w.matches("-?\\d+\\s+-?\\d+(\\s+-?\\d+)?")) {
+            String[] s = w.split("\\s+");
+            int x = Integer.parseInt(s[0]), z = Integer.parseInt(s[s.length - 1]);
+            int y = s.length == 3 ? Integer.parseInt(s[1]) : core.world().surfaceY(x, z);
+            p = new com.kingdomsai.core.common.Pos(x, y == Integer.MIN_VALUE ? k.center.y() : y, z);
+        } else if (w.matches("(praca|centro|salao|salao real|vila|aldeia)")) p = k.marker(com.kingdomsai.core.kingdom.Marker.GATHER, k.center);
+        else if (w.matches("(spawn|entrada|chegada)")) p = k.spawnPoint();
+        else if (w.matches("(mina|pedreira)")) {
+            p = k.markers.get(com.kingdomsai.core.kingdom.Marker.MINE);
+            if (p == null) return new Target(null, null, "O reino não tem mina marcada: use a Bandeira (\"marque aqui como mina\").");
+        } else if (w.matches("(bosque|floresta|mata)")) {
+            p = k.markers.get(com.kingdomsai.core.kingdom.Marker.FOREST);
+            if (p == null) return new Target(null, null, "O reino não tem bosque marcado: use a Bandeira (\"marque aqui como bosque\").");
+        } else if (w.matches("(quartel|caserna|campo|campo de treino|treino|patio)")) {
+            com.kingdomsai.core.construction.Building b = completed(core, k, "barracks");
+            if (b != null) p = b.entrance();
+            else if (w.startsWith("quartel") || w.startsWith("casern")) return new Target(null, null, "O reino ainda não tem quartel. Use \"campo\" (borda da vila) ou construa um.");
+            else {
+                var vb = com.kingdomsai.core.construction.VillageWall.bounds(core, k);
+                p = vb.center(k.center.y()).offset(vb.radius() + 8, 0, 0); // campo aberto na borda leste da vila
+                int y = core.world().surfaceY(p.x(), p.z());
+                if (y != Integer.MIN_VALUE) p = new com.kingdomsai.core.common.Pos(p.x(), y, p.z());
+            }
+        } else if (w.matches("(forja|ferraria|armazem|deposito|fazenda|lavoura|biblioteca)")) {
+            String id = w.startsWith("forj") || w.startsWith("ferr") ? "smithy" : w.startsWith("armaz") || w.startsWith("depos") ? "storage"
+                    : w.startsWith("bibli") ? "library" : "farm";
+            com.kingdomsai.core.construction.Building b = completed(core, k, id);
+            if (b == null) return new Target(null, null, "O reino não tem " + where + " pronta.");
+            p = b.entrance();
+        } else {
+            Npc n = core.findNpc(k.id, where);
+            if (n == null || n.pos == null) return new Target(null, null, "Não conheço o lugar \"" + where + "\" (aqui, praça, quartel, mina, bosque, campo ou x z).");
+            p = n.pos;
+        }
+        if (p.distXZ(k.center) > 3000) return new Target(null, null, "Longe demais.");
+        return new Target(p, null, null);
+    }
+
+    private static com.kingdomsai.core.construction.Building completed(KingdomsCore core, Kingdom k, String id) {
+        for (var b : core.buildings(k.id)) if (b.isComplete() && b.blueprintId.equals(id) && b.origin.y() != Integer.MIN_VALUE) return b;
+        return null;
+    }
+
+    /** Quem vai: o grupo pedido (soldados, guardas, tropa, todos, profissão, nomes) e/ou o líder. */
+    public static List<Npc> movers(KingdomsCore core, Kingdom k, ActionRequest r) {
+        List<Npc> out = new java.util.ArrayList<>();
+        Npc lead = r.param("npc") == null ? null : core.findNpc(k.id, r.param("npc"));
+        if (lead != null) out.add(lead);
+        String who = r.param("who") == null ? "" : com.kingdomsai.core.common.Text.norm(r.param("who"));
+        if (!who.isBlank()) {
+            Profession prof = Profession.parse(who.replaceAll("s$", ""));
+            boolean soldiers = who.matches(".*(soldad|tropa|exercito|militar|homens).*"), guards = who.matches(".*(guarda|tropa|exercito|militar).*");
+            boolean all = who.matches(".*(todos|todo mundo|todas|povo|geral).*");
+            for (Npc n : core.citizens(k.id)) {
+                if (out.contains(n) || n.office == Office.KING || !n.isFree() || core.warfare().atWar(n)) continue;
+                if (all || soldiers && n.profession == Profession.SOLDIER || guards && n.profession == Profession.GUARD
+                        || prof != null && n.profession == prof) out.add(n);
+            }
+            if (out.size() <= (lead == null ? 0 : 1))
+                for (String name : who.split("\\s*(,| e )\\s*")) {
+                    Npc n = core.findNpc(k.id, name);
+                    if (n != null && !out.contains(n)) out.add(n);
+                }
+        }
+        out.removeIf(n -> n.office == Office.KING);
+        return out.size() > 40 ? out.subList(0, 40) : out;
+    }
+
     /** Colonos: civis livres sem cargo; camponeses primeiro, depois das profissões com mais gente. */
     public static List<Npc> settlers(KingdomsCore core, Kingdom k, int amount) {
         List<Npc> pool = new java.util.ArrayList<>();
         Map<Profession, Integer> per = new EnumMap<>(Profession.class);
         for (Npc n : core.citizens(k.id)) per.merge(n.profession, 1, Integer::sum);
         for (Npc n : core.citizens(k.id))
-            if (n.isFree() && !n.profession.isMilitary() && n.office == Office.NONE && n.campaignId == null && n.jobId == null
+            if (n.isFree() && !n.profession.isMilitary() && n.office == Office.NONE && !core.warfare().atWar(n) && n.jobId == null
                     && !core.scheduler().isSummoned(n)) pool.add(n);
         pool.sort(java.util.Comparator.comparingInt((Npc n) -> n.profession == Profession.PEASANT ? 0 : 1)
                 .thenComparingInt(n -> -per.getOrDefault(n.profession, 0))

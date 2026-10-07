@@ -156,6 +156,7 @@ public class ManagerScreen extends Screen {
                 boolean live = false;
                 for (JsonElement e : arr(k, "campaigns")) live |= e.getAsJsonObject().get("live").getAsBoolean();
                 if (live) btn("Recuar a tropa", "retreat", cx0 + 268, y + 20, 100, WARN);
+                btn("Treinar a tropa", "train", cx0 + 308, y, 100, GOOD);
                 // vizinhos: atacar (o comandante escolhe quem vai e o objetivo)
                 int ny = cy1 - 44;
                 int nx = cx0 + 4;

@@ -19,7 +19,19 @@ public final class ParametricBlueprints {
     public enum Kind {
         HOUSE("Casa", Category.HOUSING), BARRACKS("Quartel", Category.MILITARY), SMITHY("Forja", Category.INDUSTRY),
         STORAGE("Armazém", Category.STORAGE), HALL("Salão", Category.CIVIC), TOWER("Torre", Category.MILITARY),
-        CHAPEL("Capela", Category.CIVIC), TAVERN("Taverna", Category.CIVIC);
+        CHAPEL("Capela", Category.CIVIC), TAVERN("Taverna", Category.CIVIC),
+        /** Porta larga, fardos de feno, sem camas. */
+        BARN("Celeiro", Category.FARM),
+        /** Celeiro com baias de cerca para animais. */
+        STABLE("Estábulo", Category.FARM),
+        /** Anel de pedra com água, colunas e cobertura — sem porta. */
+        WELL("Poço", Category.CIVIC),
+        /** Aberto dos lados: colunas, cobertura e bancas. */
+        MARKET("Mercado", Category.STORAGE),
+        LIBRARY("Biblioteca", Category.CIVIC),
+        WORKSHOP("Oficina", Category.INDUSTRY),
+        /** Qualquer coisa que não está no catálogo: o nome é o que o rei pediu ("Observatório", "Estufa"). */
+        GENERIC("Construção", Category.CIVIC);
         public final String display;
         public final Category category;
 
@@ -34,11 +46,19 @@ public final class ParametricBlueprints {
             if (n.startsWith("cas") || n.startsWith("hous") || n.startsWith("morad") || n.startsWith("resid")) return HOUSE;
             if (n.startsWith("quart") || n.startsWith("barr") || n.startsWith("casern")) return BARRACKS;
             if (n.startsWith("forj") || n.startsWith("smith") || n.startsWith("ferrar")) return SMITHY;
-            if (n.startsWith("armaz") || n.startsWith("celeir") || n.startsWith("depos") || n.startsWith("stor")) return STORAGE;
+            if (n.startsWith("celeir") || n.startsWith("paiol") || n.startsWith("barn")) return BARN;
+            if (n.startsWith("estabul") || n.startsWith("cocheir") || n.startsWith("curral") || n.startsWith("cavalari") || n.startsWith("stable")) return STABLE;
+            if (n.startsWith("poco") || n.startsWith("cisterna") || n.startsWith("fonte") || n.startsWith("well")) return WELL;
+            if (n.startsWith("mercad") || n.startsWith("feira") || n.startsWith("banca") || n.startsWith("barraca") || n.startsWith("market")) return MARKET;
+            if (n.startsWith("bibliot") || n.startsWith("escola") || n.startsWith("arquiv") || n.startsWith("library")) return LIBRARY;
+            if (n.startsWith("oficin") || n.startsWith("carpint") || n.startsWith("padari") || n.startsWith("moinh") || n.startsWith("serrari")
+                    || n.startsWith("alfaiat") || n.startsWith("workshop")) return WORKSHOP;
+            if (n.startsWith("armaz") || n.startsWith("depos") || n.startsWith("stor")) return STORAGE;
             if (n.startsWith("sal") || n.startsWith("hall") || n.startsWith("prefeit") || n.startsWith("pac") || n.startsWith("castel")) return HALL;
-            if (n.startsWith("torr") || n.startsWith("tow") || n.startsWith("vigia")) return TOWER;
+            if (n.startsWith("torr") || n.startsWith("tow") || n.startsWith("vigia") || n.startsWith("atalaia") || n.startsWith("farol")) return TOWER;
             if (n.startsWith("capel") || n.startsWith("templ") || n.startsWith("igrej") || n.startsWith("chap")) return CHAPEL;
-            if (n.startsWith("tavern") || n.startsWith("bar") || n.startsWith("estalag")) return TAVERN;
+            if (n.startsWith("tavern") || n.equals("bar") || n.startsWith("estalag") || n.startsWith("pousad")) return TAVERN;
+            if (n.startsWith("constru") || n.startsWith("estrutur") || n.startsWith("generic") || n.startsWith("outro")) return GENERIC;
             for (Kind k : values()) if (k.name().equalsIgnoreCase(n)) return k;
             return null;
         }
@@ -109,7 +129,7 @@ public final class ParametricBlueprints {
     /** Parâmetros validados. Use {@link #spec(Map)} para montar a partir de texto (CLI/LLM). */
     public record Spec(String name, Kind kind, int width, int depth, int floors, Roof roof, String wall, String roofMaterial, boolean chimney) {}
 
-    public static final int MIN_SIZE = 5, MAX_SIZE = 15, MAX_FLOORS = 3;
+    public static final int MIN_SIZE = 5, MAX_SIZE = 21, MAX_FLOORS = 4;
 
     /**
      * Monta e valida o Spec a partir de parâmetros (aceita pt/en: tipo|kind, largura|width, profundidade|depth,
@@ -118,29 +138,71 @@ public final class ParametricBlueprints {
      * @throws IllegalArgumentException com mensagem em português se algo estiver fora do permitido.
      */
     public static Spec spec(Map<String, String> p) {
-        Kind kind = Kind.parse(first(p, "tipo", "kind", "type"));
-        if (kind == null) kind = Kind.HOUSE;
-        int width = intOf(first(p, "largura", "width", "w"), kind == Kind.TOWER ? 5 : kind == Kind.HALL ? 11 : 7);
-        int depth = intOf(first(p, "profundidade", "depth", "d", "comprimento"), kind == Kind.TOWER ? 5 : kind == Kind.HALL ? 9 : 7);
-        int floors = intOf(first(p, "andares", "floors", "pisos"), kind == Kind.TOWER ? 3 : 1);
-        if (width < MIN_SIZE || width > MAX_SIZE || depth < MIN_SIZE || depth > MAX_SIZE)
-            throw new IllegalArgumentException("Largura e profundidade devem ficar entre " + MIN_SIZE + " e " + MAX_SIZE + ".");
-        if (floors < 1 || floors > MAX_FLOORS) throw new IllegalArgumentException("Andares: 1 a " + MAX_FLOORS + ".");
+        String kindText = first(p, "tipo", "kind", "type");
+        Kind kind = Kind.parse(kindText);
+        String name0 = first(p, "nome", "name");
+        if (kind == null && name0 != null) kind = Kind.parse(name0);
+        if (kind == null) kind = kindText == null || kindText.isBlank() ? Kind.HOUSE : Kind.GENERIC; // pedido fora do catálogo vira estrutura genérica
+        int width = clamp(intOf(first(p, "largura", "width", "w"), defaultWidth(kind)), MIN_SIZE, MAX_SIZE);
+        int depth = clamp(intOf(first(p, "profundidade", "depth", "d", "comprimento"), defaultDepth(kind)), MIN_SIZE, MAX_SIZE);
+        int floors = clamp(intOf(first(p, "andares", "floors", "pisos"), kind == Kind.TOWER ? 3 : 1), 1, MAX_FLOORS);
+        if (kind == Kind.WELL) {
+            width = Math.min(width, 7);
+            depth = Math.min(depth, 7);
+            floors = 1;
+        }
+        if (kind == Kind.MARKET) floors = 1;
         String roofText = first(p, "telhado", "roof");
         Roof roof = roofText == null ? (kind == Kind.TOWER ? Roof.FLAT : Roof.GABLE) : Roof.parse(roofText);
         if (roof == null) throw new IllegalArgumentException("Telhado desconhecido: " + roofText + " (plano, piramide, duas_aguas).");
         String wallText = first(p, "parede", "wall", "material");
-        Mat wall = wallText == null ? mat(kind == Kind.TOWER || kind == Kind.BARRACKS ? "stone" : "oak") : material(wallText);
+        Mat wall = wallText == null ? mat(kind == Kind.TOWER || kind == Kind.BARRACKS ? "stone" : kind == Kind.WELL ? "cobblestone"
+                : kind == Kind.BARN || kind == Kind.STABLE ? "spruce" : "oak") : material(wallText);
         if (wall == null) throw new IllegalArgumentException("Material de parede desconhecido: " + wallText + ". Opções: " + materialList() + ".");
         String roofMatText = first(p, "telhado_material", "roof_material", "cobertura");
         Mat roofMat = roofMatText == null ? mat(wall.wood ? "dark_oak" : "spruce") : material(roofMatText);
         if (roofMat == null) throw new IllegalArgumentException("Material de telhado desconhecido: " + roofMatText + ".");
         boolean chimney = "true".equalsIgnoreCase(first(p, "chamine", "chimney")) || "sim".equalsIgnoreCase(first(p, "chamine", "chimney"));
-        String name = first(p, "nome", "name");
+        String name = name0;
         if (name == null || name.isBlank())
             name = kind.display + " " + width + "x" + depth + (floors > 1 ? " (" + floors + " andares)" : "") + " de " + wall.display;
+        else name = Character.toUpperCase(name.charAt(0)) + name.substring(1);
         name = Text.truncate(name.replaceAll("[<>{}\\[\\]=§]", "").trim(), 40);
         return new Spec(name, kind, width, depth, floors, roof, wall.key, roofMat.key, chimney);
+    }
+
+    private static int defaultWidth(Kind k) {
+        return switch (k) {
+            case TOWER, WELL -> 5;
+            case HALL, BARN, STABLE -> 11;
+            case MARKET -> 9;
+            default -> 7;
+        };
+    }
+
+    private static int defaultDepth(Kind k) {
+        return switch (k) {
+            case TOWER, WELL -> 5;
+            case HALL, BARN, STABLE -> 9;
+            case MARKET -> 7;
+            default -> 7;
+        };
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    /** O que foi ajustado em relação ao pedido (tamanho/andares fora do permitido) — para o jogo avisar em vez de recusar. */
+    public static List<String> adjustments(Map<String, String> p, Spec s) {
+        List<String> out = new ArrayList<>();
+        int w = intOf(first(p, "largura", "width", "w"), s.width()), d = intOf(first(p, "profundidade", "depth", "d", "comprimento"), s.depth());
+        int f = intOf(first(p, "andares", "floors", "pisos"), s.floors());
+        if (w != s.width() || d != s.depth()) out.add("tamanho " + w + "x" + d + " → " + s.width() + "x" + s.depth() + " (de " + MIN_SIZE + " a " + MAX_SIZE + ")");
+        if (f != s.floors()) out.add("andares " + f + " → " + s.floors() + (s.kind() == Kind.WELL || s.kind() == Kind.MARKET ? " (" + s.kind().display.toLowerCase() + " é térreo)" : " (máx. " + MAX_FLOORS + ")"));
+        String kt = first(p, "tipo", "kind", "type");
+        if (kt != null && Kind.parse(kt) == null) out.add("\"" + kt + "\" não está no catálogo: projetei como estrutura sob medida");
+        return out;
     }
 
     public static String materialList() {
@@ -172,6 +234,7 @@ public final class ParametricBlueprints {
     }
 
     public static Blueprint generate(Spec s) {
+        if (s.kind() == Kind.WELL) return well(s);
         Mat wall = mat(s.wall()), roofMat = mat(s.roofMaterial());
         int w = s.width(), d = s.depth(), floors = s.floors();
         int fh = 4;
@@ -195,6 +258,9 @@ public final class ParametricBlueprints {
             }
         int doorX = w / 2;
         int ladderX = 1, ladderZ = d - 2;
+        boolean open = s.kind() == Kind.MARKET;                                    // mercado: aberto dos lados
+        int doorHalf = s.kind() == Kind.BARN || s.kind() == Kind.STABLE ? 1 : 0;   // celeiro: porta de 3 de largura
+        int doorH = doorHalf > 0 ? 3 : 2;
         // 3) paredes, janelas e pisos intermediários — camada por camada (a casa "sobe")
         for (int y = 0; y < wallH; y++) {
             boolean windowRow = y % fh == 1;
@@ -206,7 +272,8 @@ public final class ParametricBlueprints {
                             p.add(new Placement(x, y, z, Material.FLOOR, Facing.NONE)); // piso do andar de cima
                         continue;
                     }
-                    if (z == 0 && x == doorX && y < 2) continue;
+                    if (z == 0 && Math.abs(x - doorX) <= doorHalf && y < doorH) continue;
+                    if (open && y < fh - 1 && !(edgeX && edgeZ) && !(x % 3 == 0 && edgeZ) && !(z % 3 == 0 && edgeX)) continue;
                     Material m;
                     if (edgeX && edgeZ) m = Material.PILLAR;
                     else if (y % fh == fh - 1) m = Material.PILLAR; // viga entre andares
@@ -265,10 +332,12 @@ public final class ParametricBlueprints {
         // 6) chaminé
         if (s.chimney())
             for (int y = 0; y < height - 1; y++) p.add(new Placement(w - 2, y, d - 2, Material.CHIMNEY, Facing.NONE));
-        // 7) porta
-        p.add(new Placement(doorX, 0, 0, Material.DOOR_LOWER, Facing.NORTH));
-        p.add(new Placement(doorX, 1, 0, Material.DOOR_UPPER, Facing.NORTH));
-        p.add(new Placement(doorX, -1, -1, Material.PATH, Facing.NONE));
+        // 7) porta (celeiro: vão largo sem porta; mercado: aberto)
+        if (doorHalf == 0 && !open) {
+            p.add(new Placement(doorX, 0, 0, Material.DOOR_LOWER, Facing.NORTH));
+            p.add(new Placement(doorX, 1, 0, Material.DOOR_UPPER, Facing.NORTH));
+        }
+        for (int dx = -doorHalf; dx <= doorHalf; dx++) p.add(new Placement(doorX + dx, -1, -1, Material.PATH, Facing.NONE));
         // 8) interior por andar
         int beds = 0;
         for (int f = 0; f < floors; f++) {
@@ -276,7 +345,7 @@ public final class ParametricBlueprints {
             p.add(new Placement(w - 2, y0, d / 2, Material.LIGHT, Facing.NONE));
             if (w >= 7) p.add(new Placement(2, y0, 1, Material.LIGHT, Facing.NONE));
             boolean sleepFloor = switch (s.kind()) {
-                case HOUSE, TAVERN -> floors == 1 || f > 0;
+                case HOUSE, TAVERN, GENERIC -> s.kind() != Kind.GENERIC && (floors == 1 || f > 0) || s.kind() == Kind.GENERIC && f > 0;
                 case BARRACKS -> true;
                 case TOWER -> f == floors - 1;
                 default -> false;
@@ -310,6 +379,44 @@ public final class ParametricBlueprints {
                         p.add(new Placement(w - 2, 0, 1, Material.BARREL, Facing.SOUTH));
                         p.add(new Placement(w - 3, 0, 1, Material.BARREL, Facing.SOUTH));
                         p.add(new Placement(1, 0, 1, Material.CRAFTING, Facing.NONE));
+                    }
+                    case BARN -> {
+                        for (int x = 1; x < w - 1; x++)
+                            for (int y = 0; y < Math.min(2, fh - 1); y++)
+                                if (x <= 2 || x >= w - 3) p.add(new Placement(x, y, d - 2, Material.HAY, Facing.NONE));
+                        p.add(new Placement(1, 0, 1, Material.CHEST, Facing.SOUTH));
+                    }
+                    case STABLE -> {
+                        // baias: cercas a cada 3 blocos no lado esquerdo, feno no fundo
+                        for (int z = 2; z < d - 1; z++)
+                            if (z % 3 == 2) for (int x = 1; x <= Math.min(3, w - 3); x++) p.add(new Placement(x, 0, z, Material.FENCE, Facing.NONE));
+                        for (int x = w - 3; x < w - 1; x++) p.add(new Placement(x, 0, d - 2, Material.HAY, Facing.NONE));
+                    }
+                    case MARKET -> {
+                        for (int x = 2; x < w - 2; x += 2) {
+                            p.add(new Placement(x, 0, 2, x % 4 == 0 ? Material.BARREL : Material.CHEST, Facing.SOUTH));
+                            if (d > 6) p.add(new Placement(x, 0, d - 3, Material.BARREL, Facing.NORTH));
+                        }
+                        p.add(new Placement(w / 2, 0, d / 2, Material.CRAFTING, Facing.NONE));
+                    }
+                    case LIBRARY -> {
+                        for (int z = 1; z < d - 1; z++)
+                            for (int y = 0; y < Math.min(3, fh - 1); y++) {
+                                p.add(new Placement(1, y, z, Material.BOOKSHELF, Facing.NONE));
+                                if (w > 6) p.add(new Placement(w - 2, y, z, Material.BOOKSHELF, Facing.NONE));
+                            }
+                        p.add(new Placement(w / 2, 0, d / 2, Material.LECTERN, Facing.NORTH));
+                    }
+                    case WORKSHOP -> {
+                        p.add(new Placement(1, 0, 1, Material.CRAFTING, Facing.NONE));
+                        p.add(new Placement(w - 2, 0, 1, Material.FURNACE, Facing.SOUTH));
+                        p.add(new Placement(w - 2, 0, d - 2, Material.ANVIL, Facing.NONE));
+                        p.add(new Placement(1, 0, d - 2, Material.CHEST, Facing.NORTH));
+                    }
+                    case GENERIC -> {
+                        p.add(new Placement(1, 0, 1, Material.CHEST, Facing.SOUTH));
+                        p.add(new Placement(w - 2, 0, d - 2, Material.CRAFTING, Facing.NONE));
+                        p.add(new Placement(w / 2, 0, d - 2, Material.BANNER, Facing.NORTH));
                     }
                     default -> {
                         p.add(new Placement(w - 2, 0, 1, Material.CRAFTING, Facing.NONE));
@@ -349,6 +456,40 @@ public final class ParametricBlueprints {
         if (s.kind() == Kind.SMITHY || s.kind() == Kind.BARRACKS) cost.put(ResourceType.IRON, 5);
         int housing = s.kind() == Kind.HALL ? 2 : beds;
         return new Blueprint(idFor(s), s.name(), s.kind().category, w, height, d, Collections.unmodifiableMap(cost), housing,
+                List.copyOf(p), "param", Collections.unmodifiableMap(mats));
+    }
+
+    /** Poço: anel de pedra, água no meio (2 de fundo), colunas de cerca e cobertura. Sem porta. */
+    private static Blueprint well(Spec s) {
+        Mat wall = mat(s.wall()), roofMat = mat(s.roofMaterial());
+        int w = s.width(), d = s.depth();
+        List<Placement> p = new ArrayList<>();
+        for (int y = 0; y < 5; y++)
+            for (int x = -1; x <= w; x++)
+                for (int z = -1; z <= d; z++) p.add(new Placement(x, y, z, Material.AIR, Facing.NONE));
+        int x0 = w / 2 - 1, x1 = w / 2 + 1, z0 = d / 2 - 1, z1 = d / 2 + 1;
+        for (int x = 0; x < w; x++)
+            for (int z = 0; z < d; z++) {
+                boolean inner = x > x0 && x < x1 && z > z0 && z < z1;
+                p.add(new Placement(x, -1, z, inner ? Material.WATER : Material.FOUNDATION, Facing.NONE));
+                if (inner) p.add(new Placement(x, -2, z, Material.WATER, Facing.NONE));
+                boolean ring = x >= x0 && x <= x1 && z >= z0 && z <= z1 && !inner;
+                if (ring) p.add(new Placement(x, 0, z, Material.WALL, Facing.NONE));
+            }
+        for (int[] c : new int[][]{{x0, z0}, {x1, z0}, {x0, z1}, {x1, z1}})
+            for (int y = 1; y <= 2; y++) p.add(new Placement(c[0], y, c[1], Material.FENCE, Facing.NONE));
+        for (int x = x0 - 1; x <= x1 + 1; x++)
+            for (int z = z0 - 1; z <= z1 + 1; z++) p.add(new Placement(x, 3, z, Material.ROOF, Facing.NONE));
+        p.add(new Placement(w / 2, 2, d / 2, Material.LIGHT, Facing.NONE));
+        dedupe(p);
+        Map<Material, String> mats = new EnumMap<>(Material.class);
+        mats.put(Material.WALL, wall.wood ? "minecraft:cobblestone" : wall.wall);
+        mats.put(Material.FOUNDATION, "minecraft:cobblestone");
+        mats.put(Material.ROOF, roofMat.wall);
+        Map<ResourceType, Integer> cost = new EnumMap<>(ResourceType.class);
+        cost.put(ResourceType.WOOD, 8);
+        cost.put(ResourceType.STONE, 14);
+        return new Blueprint(idFor(s), s.name(), s.kind().category, w, 5, d, Collections.unmodifiableMap(cost), 0,
                 List.copyOf(p), "param", Collections.unmodifiableMap(mats));
     }
 

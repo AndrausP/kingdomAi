@@ -66,6 +66,7 @@ public final class KingdomsCore {
     private final com.kingdomsai.core.work.WorkSystem work;
     private final com.kingdomsai.core.skill.SkillSystem skills;
     private final com.kingdomsai.core.military.MilitarySystem warfare;
+    private final com.kingdomsai.core.economy.TreasurySystem treasury;
     private final com.kingdomsai.core.event.AwayReport reports;
 
     public KingdomsCore(WorldState state, CoreConfig config) {
@@ -91,6 +92,7 @@ public final class KingdomsCore {
         this.work = new com.kingdomsai.core.work.WorkSystem(this);
         this.skills = new com.kingdomsai.core.skill.SkillSystem(this);
         this.warfare = new com.kingdomsai.core.military.MilitarySystem(this);
+        this.treasury = new com.kingdomsai.core.economy.TreasurySystem(this);
         this.reports = new com.kingdomsai.core.event.AwayReport(this);
         wireReactions();
     }
@@ -131,6 +133,15 @@ public final class KingdomsCore {
                 att.trust = Text.clamp(att.trust - (fromHere ? 20 : 4), 0, 100);
             }
         });
+        // obra começou: os materiais saem dos baús na hora; armazém novo: o estoque passa para ele
+        bus.subscribe(EventType.BUILDING_STARTED, e -> {
+            Kingdom k = kingdom(e.kingdomId());
+            if (k != null) treasury.sync(k);
+        });
+        bus.subscribe(EventType.BUILDING_COMPLETED, e -> {
+            Kingdom k = kingdom(e.kingdomId());
+            if (k != null) treasury.sync(k);
+        });
         bus.subscribe(EventType.BUILDING_COMPLETED, e -> {
             Kingdom k = kingdom(e.kingdomId());
             if (k != null) k.morale = Text.clamp(k.morale + 1, 0, 100);
@@ -167,7 +178,10 @@ public final class KingdomsCore {
             construction.tickSecond();
             warfare.tickSecond();
         }
-        if (t % config.ticks(config.economicTickSeconds) == 0) economy.tick();
+        if (t % config.ticks(config.economicTickSeconds) == 0) {
+            economy.tick();
+            treasury.syncAll(); // o estoque mora nos baús: produção entra, consumo sai, o que o jogador mexeu conta
+        }
         if (t % config.ticks(config.populationTickSeconds) == 0) population.tick();
         if (t % config.ticks(config.strategicTickSeconds) == 0) {
             population.strategicTick();
@@ -248,6 +262,10 @@ public final class KingdomsCore {
         n.loyalty = Text.clamp(45 + n.trait(Trait.LOYALTY) / 3 + rng.nextInt(10), 0, 100);
         n.hunger = 70 + rng.nextInt(30);
         n.energy = 70 + rng.nextInt(30);
+        if (profession.isMilitary() && k.get(ResourceType.WEAPONS) >= 1) { // arma do arsenal do reino
+            k.add(ResourceType.WEAPONS, -1);
+            n.equipped = "iron_sword";
+        }
         state.npcs.put(n.id, n);
         // Relações iniciais com alguns vizinhos.
         List<Npc> others = citizens(k.id);
@@ -412,6 +430,11 @@ public final class KingdomsCore {
 
     public com.kingdomsai.core.work.WorkSystem work() {
         return work;
+    }
+
+    /** Tesouro físico: o estoque do reino nos baús do armazém/salão. */
+    public com.kingdomsai.core.economy.TreasurySystem treasury() {
+        return treasury;
     }
 
     /** Guerra e domínio: campanhas, batalhas, colonos, cativos, massacre/escravidão/libertação. */

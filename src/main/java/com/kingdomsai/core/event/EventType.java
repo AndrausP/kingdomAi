@@ -68,5 +68,7 @@ public enum EventType {
     ENSLAVED,
     FREED,
     SLAVE_ESCAPED,
-    SLAVE_REVOLT
+    SLAVE_REVOLT,
+    TREASURY_CHANGED,
+    DRILL_DONE
 }

@@ -32,7 +32,46 @@ public final class RuleInterpreter {
         this.core = core;
     }
 
+    /** Verbos que começam uma ordem nova ("construa X, treine Y e colete Z"). Logística ("e leve ao ferreiro", "e me entregue") não divide. */
+    private static final String NEW_ORDER = "(constru\\w*|erg[aui]\\w*|levant\\w*|edifiqu\\w*|facam?|trein\\w*|recrut\\w*|convoq\\w*|alist\\w*|"
+            + "vao|va|reun\\w*|colet\\w*|limp\\w*|derrub\\w*|desmat\\w*|ataq\\w*|invad\\w*|cort\\w*|plant\\w*|colh\\w*|miner\\w*|busqu\\w*|junt\\w*|"
+            + "aument\\w*|baix\\w*|promov\\w*|nomei\\w*|escraviz\\w*|libert\\w*|cuid\\w*|resolv\\w*|prepar\\w*|cav\\w*|marqu\\w*|cham\\w*|"
+            + "declar\\w*|expand\\w*|reivindiq\\w*|fortale\\w*|ocup\\w*|coloniz\\w*|recu\\w*|garant\\w*|organiz\\w*|providenci\\w*)";
+
+    /** Divide "faça isso, isso e aquilo" em ordens. Mantém o texto original (com acentos) quando dá. */
+    static List<String> clauses(String text) {
+        String t = Text.norm(text);
+        Matcher m = Pattern.compile("(?:\\s*[,;]\\s*(?:e\\s+)?(?:depois\\s+)?|\\s+e\\s+(?:depois\\s+)?|\\s+depois\\s+|\\s+tambem\\s+)(?=" + NEW_ORDER + "\\b)").matcher(t);
+        List<String> out = new ArrayList<>();
+        boolean sameLength = t.length() == text.length();
+        int start = 0;
+        while (m.find()) {
+            out.add((sameLength ? text : t).substring(start, m.start()).trim());
+            start = m.end();
+        }
+        out.add((sameLength ? text : t).substring(start).trim());
+        out.removeIf(String::isBlank);
+        return out;
+    }
+
     public Plan interpret(Kingdom k, Npc speaker, String text) {
+        List<String> parts = clauses(text);
+        if (parts.size() <= 1) return interpretOne(k, speaker, text);
+        // Ordem composta: cada parte vira sua(s) ação(ões); o conselho reparte entre quem sabe fazer.
+        List<Plan.PlannedAction> all = new ArrayList<>();
+        for (String part : parts) {
+            Plan p = interpretOne(k, speaker, part);
+            for (Plan.PlannedAction a : p.actions())
+                if (all.stream().noneMatch(x -> x.type() == a.type() && x.params().equals(a.params()))) all.add(a);
+        }
+        if (all.isEmpty()) return interpretOne(k, speaker, text);
+        String reply = speaker == null || speaker.office == Office.ADVISOR
+                ? "Entendido, Majestade: são " + all.size() + " tarefa(s); passo cada uma a quem sabe fazer."
+                : acknowledge(speaker) + " Uma coisa de cada vez, mas faço tudo.";
+        return new Plan(reply, all);
+    }
+
+    private Plan interpretOne(Kingdom k, Npc speaker, String text) {
         String t = Text.norm(text);
         List<Plan.PlannedAction> acts = new ArrayList<>();
         String reply = null;
@@ -96,11 +135,14 @@ public final class RuleInterpreter {
         }
 
         // --- construção
-        if (chain == null && job == null && !wall && t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
+        if (chain == null && job == null && !wall && t.matches(".*\\b(constru|erg[aui]|levant|edifiq|mont[ae]m? |faca |facam |crie |criem |build|erect|mande construir).*")) {
             Map<String, String> custom = customSpec(t);
+            if (custom != null && custom.get("name") != null) custom.put("name", originalWords(text, custom.get("name")));
             Blueprint bp = custom != null ? null : findBlueprint(t);
             if (custom != null && !t.contains("espada") && !t.contains("arma")) {
-                custom.put("amount", String.valueOf(numberBefore(t, bpWordIndex(t), 1)));
+                String noun = buildingNoun(t);
+                int at = noun == null ? -1 : t.indexOf(noun);
+                custom.put("amount", String.valueOf(Math.min(5, numberBefore(t, at >= 0 ? at : bpWordIndex(t), 1))));
                 String dl = deadlineIn(t);
                 if (dl != null) custom.put("deadline", dl);
                 acts.add(new Plan.PlannedAction(ActionType.BUILD, "BUILD", custom));
@@ -135,6 +177,7 @@ public final class RuleInterpreter {
             acts.add(new Plan.PlannedAction(ActionType.RECRUIT, "RECRUIT", p));
         }
         warOrders(k, speaker, t, acts);
+        drillOrders(k, speaker, t, acts);
         if (t.matches(".*\\b(liber|dispens|desmobiliz|release|devolv).*") && t.contains("soldad")) {
             Map<String, String> p = params("amount", String.valueOf(firstNumber(t, 1)));
             Profession to = professionAnywhere(t, Profession.SOLDIER);
@@ -209,6 +252,14 @@ public final class RuleInterpreter {
                     }
                 }
             }
+        }
+
+        // --- objetivo delegado ("cuide da comida", "resolva a falta de casas", "fortaleça a defesa")
+        if (acts.isEmpty() && t.matches(".*\\b(cuid\\w*|resolv\\w*|melhor\\w*|garant\\w*|organiz\\w*|fortale\\w*|providenci\\w*|aument\\w* a producao|trate)\\b.*")) {
+            Matcher g = Pattern.compile("\\b(comida|alimentos?|fome|colheita|moradias?|casas|habitac\\w*|defesa|exercito|seguranca|protecao|militar|"
+                    + "territorio|expansao|fronteiras?|madeira|lenha|pedra|trabalho|mao de obra|producao|economia)\\b").matcher(t);
+            if (g.find() && com.kingdomsai.core.ai.KingdomDirector.goalOf(g.group(1)) != null)
+                acts.add(new Plan.PlannedAction(ActionType.GOAL, "GOAL", params("goal", g.group(1))));
         }
 
         // --- pedido de produção (ex.: "Aldren, preciso de 30 espadas até amanhã")
@@ -303,6 +354,67 @@ public final class RuleInterpreter {
         }
     }
 
+    private static final String PLACE = "(aqui|ca|praca|centro|quartel|caserna|campo|mina|pedreira|bosque|floresta|spawn|forja|armazem|fazenda|lavoura|biblioteca|portao|entrada)";
+
+    /** Treinar a tropa e ir para um lugar: quem recebe a ordem lidera e escolhe quem vai. */
+    private void drillOrders(Kingdom k, Npc speaker, String t, List<Plan.PlannedAction> acts) {
+        if (acts.stream().anyMatch(a -> a.type() == ActionType.ATTACK || a.type() == ActionType.SETTLE || a.type() == ActionType.RETREAT)) return;
+        Matcher where = Pattern.compile("\\b(?:no|na|para o|para a|pro|pra|ao|ate o|ate a|em)?\\s*" + PLACE + "\\b").matcher(t);
+        String place = null;
+        while (where.find()) place = where.group(1);
+        Matcher xz = Pattern.compile("\\b(-?\\d+)\\s+(-?\\d+)\\b").matcher(t);
+        if (xz.find() && t.matches(".*\\b(coordenadas?|em|para)\\s+-?\\d+\\s+-?\\d+.*")) place = xz.group(1) + " " + xz.group(2);
+        Matcher mins = Pattern.compile("\\b(\\d+|um|uma|dois|duas|tres|cinco|dez)\\s+minutos?").matcher(t);
+        String minutes = null;
+        if (mins.find()) {
+            Integer m = toNumber(mins.group(1));
+            if (m != null) minutes = String.valueOf(m);
+        }
+        if (t.matches(".*\\b(ate eu mandar|ate segunda ordem|ate eu voltar)\\b.*")) minutes = "ate eu mandar";
+        // treinar
+        if (t.matches(".*\\b(trein\\w*|exercit[ae]m?|exercicios?|instru\\w*|ensin\\w* a lutar|drill)\\b.*")
+                && !t.matches(".*\\b(exercito)\\b.*\\b(atac|invad)\\w*.*")) {
+            Map<String, String> p = params();
+            if (speaker != null && speaker.office != Office.ADVISOR && speaker.office != Office.KING) p.put("npc", speaker.name);
+            else {
+                Npc who = npcMentioned(k, t, null);
+                if (who != null) p.put("npc", who.name);
+            }
+            int n = numberBeforeWord(t, "soldad", -1);
+            if (n < 0) n = numberBeforeWord(t, "homens", -1);
+            if (n < 0) n = numberBeforeWord(t, "pessoas", -1);
+            if (n > 0) p.put("amount", String.valueOf(n));
+            if (t.matches(".*\\bguardas\\b.*")) p.put("guards", "true");
+            if (place != null) p.put("where", place);
+            if (minutes != null && !minutes.startsWith("ate")) p.put("minutes", minutes);
+            acts.add(new Plan.PlannedAction(ActionType.TRAIN, "TRAIN", p));
+            return;
+        }
+        // ir para / reunir / ficar
+        boolean moveVerb = t.matches(".*\\b(va|vai|vao|vamos|venha|venham|ide|reuna|reunam|junte|juntem|leve|levem|fique|fiquem|espere|esperem|"
+                + "marche|marchem|sigam|siga|corra|corram|apresente-se|apresentem-se|aguardem|aguarde|posicione|posicionem)\\b.*");
+        if (!moveVerb || place == null) return;
+        if (t.matches(".*\\bvenha (aqui|ca)\\b.*") && !t.matches(".*\\b(todos|soldados|guardas|tropa)\\b.*")) return; // "venha aqui" = chamar (SUMMON)
+        Map<String, String> p = params("to", place);
+        String group = t.matches(".*\\b(soldados)\\b.*") ? "soldados" : t.matches(".*\\b(guardas)\\b.*") ? "guardas"
+                : t.matches(".*\\b(tropa|tropas|exercito|militares|homens)\\b.*") ? "tropa" : t.matches(".*\\b(todos|todo mundo|povo)\\b.*") ? "todos" : null;
+        if (group == null) {
+            Profession prof = professionAnywhere(t, null);
+            if (prof != null && t.matches(".*\\b\\w+(os|as|es)\\b.*") && !t.matches(".*\\b(mina|fazenda|lavoura)\\b.*")) group = prof.name();
+        }
+        boolean plural = t.matches(".*\\b(vao|venham|reunam|juntem|levem|fiquem|esperem|marchem|sigam|corram|aguardem|posicionem|apresentem-se)\\b.*");
+        if (group == null && plural && speaker != null && speaker.office.allows(com.kingdomsai.core.npc.Permission.COMMAND)) group = "tropa";
+        if (group != null) p.put("who", group);
+        if (speaker != null && speaker.office != Office.ADVISOR && speaker.office != Office.KING) p.put("npc", speaker.name);
+        else {
+            Npc who = npcMentioned(k, t, null);
+            if (who != null) p.put("npc", who.name);
+        }
+        if (!p.containsKey("npc") && !p.containsKey("who")) return;
+        if (minutes != null) p.put("minutes", minutes);
+        acts.add(new Plan.PlannedAction(ActionType.MOVE, "MOVE", p));
+    }
+
     /** Quem decide: o NPC com quem o rei fala, se for general/capitão; senão um general/capitão citado pelo nome. */
     private Npc commanderIn(Kingdom k, String t, Npc speaker) {
         if (speaker != null && speaker.office.allows(com.kingdomsai.core.npc.Permission.COMMAND) && speaker.office != Office.KING) return speaker;
@@ -330,7 +442,25 @@ public final class RuleInterpreter {
     private Map<String, String> physicalOrder(Kingdom k, Npc speaker, String t, String original) {
         Map<String, String> p = null;
         String here = "(esse|este|aquele|essa|esta|aquela|o|a|aqui|ali)";
-        if (t.matches(".*\\b(corte|corta|derrube|derruba|cortar)\\s+" + here + "\\s+arvore\\b.*"))
+        boolean routine = t.matches(".*\\b(ferreiro|forja|leve (para|ao|a)|leva (para|ao)|levem (para|ao)|entregue ao|daqui (pra|para) frente|todo dia|sempre|rotina|continuamente)\\b.*");
+        Matcher gather = Pattern.compile("\\b(colet\\w*|busqu\\w*|buscar|junt\\w*|extra[ia]\\w*|miner\\w*|pegu\\w*|traga\\w*|tragam)\\s+(?:(\\d+|um|uma|dois|duas|tres|cinco|dez|vinte|trinta)\\s+)?(?:de\\s+)?(?:um pouco de\\s+)?"
+                + "(pedras?|rochas?|terra|areia|cascalho|argila|carvao|ferro|cobre|madeira|lenha|troncos?)\\b").matcher(t);
+        if (t.matches(".*\\b(limp\\w*|derrub\\w*|cort\\w*|tir\\w*|remov\\w*|desmat\\w*)\\b.*\\barvores\\b.*") || t.matches(".*\\bdesmat\\w*\\b.*")) {
+            // "limpe as árvores da região", "derrubem todas as árvores perto da vila"
+            p = params("kind", "clear_trees");
+            Matcher r = Pattern.compile("raio de (\\d+)").matcher(t);
+            if (r.find()) p.put("radius", r.group(1));
+            if (t.matches(".*\\b(da vila|ao redor da vila|em volta da vila|perto da vila|na vila)\\b.*")) p.put("around", "vila");
+            int n = numberBeforeWord(t, "arvores", -1);
+            if (n > 0) p.put("count", String.valueOf(n));
+        } else if (!routine && gather.find()) {
+            // "vá coletar pedra", "minere 40 pedras", "busque areia", "junte lenha"
+            p = params("kind", "gather", "item", gather.group(3));
+            if (gather.group(2) != null) p.put("count", String.valueOf(Objects.requireNonNullElse(toNumber(gather.group(2)), 32)));
+            Matcher r = Pattern.compile("raio de (\\d+)").matcher(t);
+            if (r.find()) p.put("radius", r.group(1));
+            if (t.matches(".*\\b(aqui|ali|nesse lugar|neste lugar|onde estou)\\b.*")) p.put("at", "look");
+        } else if (t.matches(".*\\b(corte|corta|derrube|derruba|cortar)\\s+" + here + "\\s+arvore\\b.*"))
             p = params("kind", "chop");
         else if (t.matches(".*\\b(quebre|quebra|destrua|destroi|remova|tire)\\s+" + here + "\\s+bloco\\b.*"))
             p = params("kind", "break");
@@ -343,7 +473,7 @@ public final class RuleInterpreter {
         } else if (t.matches(".*\\b(limpe|limpa|aplaine|aplana|limpar)\\s+" + here + "?\\s*(area|terreno|espaco|lugar)\\b.*")) {
             p = params("kind", "clear");
         }
-        if (p != null) {
+        if (p != null && !p.get("kind").equals("gather") && !p.get("kind").equals("clear_trees")) {
             Matcher sz = Pattern.compile("(\\d+)\\s*x\\s*(\\d+)(?:\\s*x\\s*(\\d+))?").matcher(t);
             if (sz.find()) p.put("size", sz.group(1) + "x" + sz.group(2) + (sz.group(3) != null ? "x" + sz.group(3) : ""));
         }
@@ -557,34 +687,84 @@ public final class RuleInterpreter {
     }
 
     /** Detecta pedido de construção personalizada ("casa grande de pedra com 2 andares e telhado de duas águas"). */
+    private static final String BUILD_VERB = "(?:constru\\w*|erg[aui]\\w*|levant\\w*|edifiqu\\w*|mont[ae]m?|faca|facam|crie|criem|build|mande construir|mandem construir)";
+    private static final java.util.Set<String> NOT_BUILDINGS = java.util.Set.of("isso", "algo", "alguma", "algum", "coisa", "ali", "aqui", "la",
+            "ela", "ele", "eles", "elas", "tudo", "mais", "outro", "outra", "espada", "espadas", "arma", "armas", "exercito", "tropa", "muro",
+            "muralha", "muros", "obra", "obras", "favor", "isto", "aquilo");
+    private static final java.util.Set<String> CATALOG_PLAIN = java.util.Set.of("casa", "casas", "fazenda", "fazendas", "quartel", "forja",
+            "armazem", "biblioteca", "salao", "prefeitura", "plantacao");
+
+    /** Recupera do texto original as palavras (com acento) que correspondem à frase normalizada: "observatorio" → "observatório". */
+    static String originalWords(String original, String normPhrase) {
+        String[] want = normPhrase.split("\\s+");
+        String[] words = original.split("[^\\p{L}]+");
+        for (int i = 0; i + want.length <= words.length; i++) {
+            boolean ok = true;
+            for (int j = 0; j < want.length && ok; j++) ok = Text.norm(words[i + j]).equals(want[j]);
+            if (ok) return String.join(" ", java.util.Arrays.copyOfRange(words, i, i + want.length));
+        }
+        return normPhrase;
+    }
+
+    /** O substantivo pedido depois do verbo: "construam um observatório de pedra" → "observatorio"; "torre de vigia" fica junto. */
+    static String buildingNoun(String t) {
+        Matcher m = Pattern.compile("\\b" + BUILD_VERB + "\\s+(?:(?:um|uma|uns|umas|o|a|os|as|mais|nov[oa]s?|\\d+|dois|duas|tres|quatro|cinco)\\s+)*"
+                + "([\\p{L}]{3,})(\\s+de\\s+[\\p{L}]{3,})?").matcher(t);
+        if (!m.find()) return null;
+        String noun = m.group(1);
+        if (NOT_BUILDINGS.contains(noun) || noun.matches("grande|pequen[oa]|enorme|media|medio")) return null;
+        String tail = m.group(2) == null ? "" : m.group(2).trim().substring(3);
+        boolean tailIsSpec = tail.matches("pedra|tijolos?|arenito|ardosia|quartzo|barro|abeto|betula|carvalho|acacia|cerejeira|mangue|pedregulho|madeira"
+                + "|\\d+|dois|duas|tres|quatro|um|uma|andares?");
+        return tail.isEmpty() || tailIsSpec ? noun : noun + " de " + tail;
+    }
+
+    /**
+     * Pedido de construção que não é uma planta pronta (ou que pede tamanho/andares/material): vira planta sob medida.
+     * O que não existe no catálogo vira estrutura genérica com o NOME pedido ("Observatório", "Estufa").
+     */
     static Map<String, String> customSpec(String t) {
-        boolean cues = t.matches(".*\\b(\\d+|dois|duas|tres) andares\\b.*") || t.contains("duas aguas") || t.contains("piramide")
-                || t.matches(".*\\b(torre|capela|taverna|templo|igreja)\\b.*")
+        String noun = buildingNoun(t);
+        boolean dims = t.matches(".*\\b\\d+\\s*(x|por)\\s*\\d+\\b.*");
+        boolean cues = t.matches(".*\\b(\\d+|dois|duas|tres|quatro) andares\\b.*") || t.contains("duas aguas") || t.contains("piramide")
                 || t.matches(".*\\bde (pedra|tijolo|tijolos|arenito|ardosia|quartzo|barro|abeto|betula|carvalho escuro|acacia|cerejeira|mangue|pedregulho)\\b.*")
-                || t.matches(".*\\b(grande|enorme|pequena|pequeno)\\b.*") && t.matches(".*\\b(casa|salao|quartel|armazem|forja)\\b.*");
-        if (!cues) return null;
+                || t.matches(".*\\b(grande|enorme|gigante|pequena|pequeno|maior|menor|alta|alto)\\b.*") || dims || t.contains("chamine");
+        com.kingdomsai.core.construction.ParametricBlueprints.Kind kind = noun == null ? null
+                : com.kingdomsai.core.construction.ParametricBlueprints.Kind.parse(noun.split(" ")[0]);
+        boolean plainCatalog = noun != null && CATALOG_PLAIN.contains(noun.split(" ")[0]);
+        boolean strongVerb = t.matches(".*\\b(constru\\w*|erg[aui]\\w*|levant\\w*|edifiqu\\w*|mont[ae]m?|build|mande construir|mandem construir)\\b.*");
+        if (noun == null) return null;
+        if (plainCatalog && !cues) return null;                 // "construa uma casa" → planta pronta
+        if (kind == null && !plainCatalog && !strongVerb) return null; // "faça um passeio" não é obra
         Map<String, String> p = new LinkedHashMap<>();
         p.put("blueprint", "custom");
-        for (String kind : new String[]{"torre", "capela", "templo", "igreja", "taverna", "quartel", "forja", "armazem", "salao", "casa"})
-            if (t.contains(kind)) {
-                p.put("kind", kind);
-                break;
-            }
-        Matcher fl = Pattern.compile("\\b(\\d+|dois|duas|tres) andares").matcher(t);
+        if (kind != null) p.put("kind", kind.name().toLowerCase(java.util.Locale.ROOT));
+        else if (plainCatalog) return null; // fazenda/plantação: planta pronta (campo)
+        else {
+            p.put("kind", "generic");
+            p.put("name", noun);
+        }
+        if (kind == com.kingdomsai.core.construction.ParametricBlueprints.Kind.TOWER && noun.contains(" de ")) p.put("name", noun);
+        Matcher fl = Pattern.compile("\\b(\\d+|dois|duas|tres|quatro) andares").matcher(t);
         if (fl.find()) {
             Integer n = toNumber(fl.group(1));
-            if (n != null) p.put("floors", String.valueOf(Math.min(3, n)));
+            if (n != null) p.put("floors", String.valueOf(n));
         }
-        if (t.contains("enorme")) {
+        Matcher dm = Pattern.compile("\\b(\\d+)\\s*(?:x|por)\\s*(\\d+)\\b").matcher(t);
+        if (dm.find()) {
+            p.put("width", dm.group(1));
+            p.put("depth", dm.group(2));
+        } else if (t.matches(".*\\b(enorme|gigante|imensa|imenso)\\b.*")) {
+            p.put("width", "17");
+            p.put("depth", "15");
+        } else if (t.matches(".*\\b(grande|maior|ampla|amplo)\\b.*")) {
             p.put("width", "13");
             p.put("depth", "11");
-        } else if (t.contains("grande")) {
-            p.put("width", "11");
-            p.put("depth", "9");
-        } else if (t.contains("pequen")) {
+        } else if (t.matches(".*\\b(pequen[oa]|menor|simples)\\b.*")) {
             p.put("width", "5");
             p.put("depth", "5");
         }
+        if (!p.containsKey("floors") && t.matches(".*\\b(alta|alto)\\b.*")) p.put("floors", "3");
         Matcher mat = Pattern.compile("\\bde (pedra|tijolos?|arenito|ardosia|quartzo|barro|abeto|betula|carvalho escuro|carvalho|acacia|cerejeira|mangue|pedregulho)\\b").matcher(t);
         if (mat.find()) p.put("wall", mat.group(1).replace("tijolos", "tijolo"));
         if (t.contains("duas aguas")) p.put("roof", "duas_aguas");

@@ -26,7 +26,11 @@ public final class Migrations {
             // v2 → v3: guerra e domínio — campanhas, cativos/escravizados (Npc.freedom), infâmia do reino. Campos novos; padrões no repair().
             root.addProperty("schemaVersion", 3);
         }
-        // if (v < 4) { ... }
+        if (v < 4) {
+            // v3 → v4: armas individuais (Npc.equipped), treinos/deslocamentos, tesouro físico nos baús. Padrões no repair().
+            root.addProperty("schemaVersion", 4);
+        }
+        // if (v < 5) { ... }
     }
 
     /** Garante campos não nulos após carregar (Gson ignora inicializadores para campos ausentes em alguns casos). */
@@ -101,6 +105,7 @@ public final class Migrations {
             if (n.heldItem == null) n.heldItem = "";
             if (n.bag == null) n.bag = new TreeMap<>();
             if (n.freedom == null) n.freedom = com.kingdomsai.core.npc.Freedom.FREE;
+            if (n.equipped == null) n.equipped = "";
             // quem estava numa campanha que sumiu do save volta para casa
             if (n.campaignId != null && (!s.campaigns.containsKey(n.campaignId) || !s.campaigns.get(n.campaignId).live())) n.campaignId = null;
         }

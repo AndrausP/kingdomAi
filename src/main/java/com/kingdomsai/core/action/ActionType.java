@@ -57,13 +57,20 @@ public enum ActionType {
     FREE(Permission.JUDGE, true, List.of("target"), "target (escravos | cativos | nome | todos), home? (true = cativos voltam para a terra natal)"),
 
     // Previstas na arquitetura, chegam em fases futuras
-    MOVE(Permission.WORK, false, List.of(), ""),
+    MOVE(Permission.ASSIGN_WORK, true, List.of("to"),
+            "to (aqui | praca | quartel | mina | bosque | spawn | forja | armazem | fazenda | campo | nome de alguém | \"x z\"), "
+                    + "who? (soldados | guardas | tropa | todos | profissão | nomes separados por vírgula; sem who vai só npc), npc? (quem lidera), "
+                    + "minutes? (quanto tempo ficam lá, padrão 3)"),
+    GOAL(Permission.ASSIGN_WORK, true, List.of("goal"),
+            "goal (comida | moradia | defesa | madeira | pedra | trabalho | territorio) — o conselheiro avalia o reino e executa os passos em nome do rei"),
+    TRAIN(Permission.RECRUIT, true, List.of(),
+            "npc? (instrutor: quem o rei mandou; ele escolhe quem treina), amount? (quantos; se faltar soldado ele convoca civis), "
+                    + "guards? (true), where? (quartel | praca | campo | aqui | \"x z\"; padrão: quartel ou campo na borda da vila), minutes? (padrão 3)"),
     TRADE(Permission.TRADE, false, List.of(), ""),
     REPAIR(Permission.BUILD, false, List.of(), ""),
     TRAVEL(Permission.WORK, false, List.of(), ""),
     DEFEND(Permission.RECRUIT, false, List.of(), ""),
     SCOUT(Permission.RECRUIT, false, List.of(), ""),
-    TRAIN(Permission.RECRUIT, false, List.of(), ""),
     ARREST(Permission.JUDGE, false, List.of(), ""),
     JUDGE(Permission.JUDGE, false, List.of(), ""),
     EXILE(Permission.JUDGE, false, List.of(), ""),

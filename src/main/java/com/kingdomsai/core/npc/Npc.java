@@ -64,6 +64,8 @@ public final class Npc {
     public Freedom freedom = Freedom.FREE;
     /** Campanha militar/colonização de que participa (v3). */
     public UUID campaignId;
+    /** Arma do arsenal do reino na mão ("iron_sword") ou "" (desarmado: espada de madeira) (v4). */
+    public String equipped = "";
     /** Reino de onde veio (cativos de guerra) — para devolvê-los se forem libertados (v3). */
     public UUID originKingdomId;
     /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */

@@ -28,6 +28,15 @@ Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1"
 
 Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `attack <reino>`, `settle 3`, `claim`, `captives`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`. **Tudo dá para fazer só pelo chat** — os comandos são atalho.
 
+### Ordens que se veem, plantas sob medida, estoque nos baús e hierarquia
+
+- **Qualquer construção**: *"construam um observatório de pedra com 3 andares"*, *"um celeiro 12x8"*, *"um poço"*, *"um mercado enorme"* — o que não está no catálogo vira **planta sob medida** com o nome pedido (celeiro, estábulo, poço, mercado, biblioteca, oficina ou estrutura genérica). Até 21×21 e 4 andares; se pedir mais, o jogo **ajusta e avisa** em vez de recusar. Falou com um construtor? **Ele** vai à obra.
+- **Treinar a tropa**: *"Capitã, treine a tropa"* — ela escolhe quem treina, **convoca se faltar gente** (poupando o último lenhador/minerador/construtor), leva todos ao quartel (ou a um campo na borda da vila) e treinam em formação por 3 min: disciplina e coragem sobem. **Ir a um lugar**: *"soldados, vão para a praça"*, *"fiquem aqui"*, *"reúna a tropa no quartel"* — eles vão de verdade e esperam lá. Convocados **se apresentam** a quem os chamou.
+- **Armas reais**: cada soldado/guarda pega uma espada do **arsenal** (as que o ferreiro forja); sem espada, treina com espada de madeira e luta pior; liberado, devolve a espada.
+- **O estoque do reino mora nos baús** do armazém (ou do Salão Real): tábuas, pedregulho, pão, barras, espadas. O que você **põe** nos baús entra no reino; o que **tira**, sai; obras tiram os materiais de lá; sem material nos baús, não constrói.
+- **Coleta de verdade**: *"limpe as árvores da região"* (várias árvores, replanta as mudas), *"vá coletar pedra"* / *"minere 40 pedras"* / *"busque areia"* — o súdito vai à mina marcada (ou onde você mira), quebra só o que pode (validação de território, construções, claims, água) e **guarda no armazém**.
+- **Hierarquia**: *"conselho, construam um mercado, treinem a tropa e colete pedra"* — o conselheiro divide em tarefas, passa cada uma a quem é competente e diz quem ficou com o quê. *"Cuide da comida"* (ou moradia, defesa, madeira, pedra, território): ele avalia o reino e executa os passos em seu nome.
+
 ### Guerra e domínio (liberdade total, o jogo cobra)
 
 - **Exército não custa ouro, custa comida.** *"Convoquem 5 soldados"* ou, para alguém competente, *"Capitão, monte um exército"* — sem número, o general/capitão decide quantos (olha a maior ameaça) e quem (camponeses primeiro, os mais corajosos). Soldado come 2 por ciclo, 3 em campanha, guarda 1,5 (civil 1). Sem limite de tamanho: o limite é a comida.

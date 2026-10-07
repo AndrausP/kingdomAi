@@ -92,7 +92,7 @@ public final class JobPlanner {
         } else if (p.get("kind") != null) {
             out.add(new LinkedHashMap<>(p));
         }
-        if (out.isEmpty()) throw new IllegalArgumentException("JOB precisa de kind (break|dig|tunnel|clear|chop|take|put|craft|give) ou tasks.");
+        if (out.isEmpty()) throw new IllegalArgumentException("JOB precisa de kind (break|dig|tunnel|clear|chop|clear_trees|gather|take|put|craft|give) ou tasks.");
         if (out.size() > 8) throw new IllegalArgumentException("No máximo 8 tarefas por ordem.");
         for (Map<String, String> m : out)
             if (kindOf(m.get("kind")) == null) throw new IllegalArgumentException("Tarefa desconhecida: «" + m.get("kind") + "».");
@@ -108,6 +108,8 @@ public final class JobPlanner {
             case "dig", "cavar", "cave", "escavar", "buraco", "hole" -> "dig";
             case "tunnel", "tunel", "galeria" -> "tunnel";
             case "clear", "limpar", "limpe", "aplainar" -> "clear";
+            case "clear_trees", "desmatar", "desmate", "derrubar_arvores", "limpar_arvores", "arvores", "trees" -> "clear_trees";
+            case "gather", "coletar", "colete", "coletem", "buscar", "busque", "juntar", "junte", "extrair", "minerar", "minere", "collect", "mine" -> "gather";
             case "chop", "cortar", "corte", "arvore", "tree" -> "chop";
             case "take", "pegar", "pegue", "retirar", "withdraw" -> "take";
             case "put", "guardar", "guarde", "depositar", "deposit", "store" -> "put";
@@ -136,6 +138,8 @@ public final class JobPlanner {
             switch (kindOf(s.get("kind"))) {
                 case "break", "dig", "tunnel", "clear" -> area(s);
                 case "chop" -> chop(s);
+                case "clear_trees" -> clearTrees(s);
+                case "gather" -> gather(s);
                 case "take" -> take(s);
                 case "put" -> put(s);
                 case "craft" -> craft(s);
@@ -183,7 +187,11 @@ public final class JobPlanner {
         }
         Profession want = switch (firstKind) {
             case "break", "dig", "tunnel", "clear" -> Profession.MINER;
-            case "chop" -> Profession.LUMBERJACK;
+            case "chop", "clear_trees" -> Profession.LUMBERJACK;
+            case "gather" -> {
+                String it = Text.norm(specs.get(0).getOrDefault("item", "pedra"));
+                yield it.matches("madeira|lenha|troncos?") ? Profession.LUMBERJACK : it.matches("terra|areia|cascalho|argila") ? Profession.PEASANT : Profession.MINER;
+            }
             default -> null;
         };
         for (Map<String, String> s : specs)
@@ -548,7 +556,8 @@ public final class JobPlanner {
         t.at = chest;
         t.item = spec;
         t.count = want;
-        t.label = "guardar " + want + " " + ItemNames.display(spec) + " no baú em " + chest;
+        t.label = spec.equals("#all") ? "guardar tudo (" + want + " itens) no baú em " + chest
+                : "guardar " + want + " " + ItemNames.display(spec) + " no baú em " + chest;
         tasks.add(t);
     }
 
@@ -588,9 +597,179 @@ public final class JobPlanner {
 
     private Pos storageChest() {
         Building b = ChainValidator.findBuilding(core, k, Place.STORAGE, true);
-        if (b == null || b.origin.y() == Integer.MIN_VALUE) return null;
-        Pos c = port.findNear(b.centerPos(), "minecraft:chest", 6);
-        return c != null ? c : port.findNear(b.centerPos(), "minecraft:barrel", 6);
+        if (b != null && b.origin.y() != Integer.MIN_VALUE) {
+            Pos c = port.findNear(b.centerPos(), "minecraft:chest", 6);
+            if (c == null) c = port.findNear(b.centerPos(), "minecraft:barrel", 6);
+            if (c != null) return c;
+        }
+        // sem armazém: os baús do tesouro (Salão Real) — é lá que o estoque do reino mora
+        List<Pos> treasury = core.treasury().chests(k);
+        return treasury.isEmpty() ? null : treasury.get(0);
+    }
+
+    // ------------------------------------------------------------------ coleta na região
+
+    /** Centro de uma coleta: x y z, a mira do rei, um marco (mina/bosque) ou onde o rei está. */
+    private Pos gatherCenter(Map<String, String> s, com.kingdomsai.core.kingdom.Marker marker) {
+        if (s.get("x") != null && s.get("z") != null)
+            return new Pos(num(s.get("x")), s.get("y") == null ? core.world().surfaceY(num(s.get("x")), num(s.get("z"))) : num(s.get("y")), num(s.get("z")));
+        if ("vila".equals(Text.norm(s.getOrDefault("around", "")))) return VillageWall.bounds(core, k).center(k.center.y());
+        KingdomsCore.Look look = core.playerLook(player);
+        boolean atLook = "look".equals(s.get("at"));
+        if (!atLook && marker != null && k.markers.containsKey(marker)) return k.markers.get(marker);
+        if (look != null && look.block() != null) return look.block();
+        return core.playerPos(player);
+    }
+
+    /** "Limpe as árvores da região": derruba várias árvores (tronco + folhas, replanta) num raio; pula as protegidas. */
+    private void clearTrees(Map<String, String> s) {
+        Pos c = gatherCenter(s, null);
+        if (c == null) {
+            errors.add("Não sei onde: mire na região ou fique perto das árvores.");
+            return;
+        }
+        boolean village = "vila".equals(Text.norm(s.getOrDefault("around", "")));
+        int radius = Math.max(4, Math.min(24, num(s.getOrDefault("radius", village ? String.valueOf(VillageWall.bounds(core, k).radius() + 8) : "12"))));
+        int max = Math.max(1, Math.min(20, num(s.getOrDefault("count", "12"))));
+        List<Pos> bases = new ArrayList<>();
+        for (int dx = -radius; dx <= radius; dx++)
+            for (int dz = -radius; dz <= radius; dz++) {
+                if (dx * dx + dz * dz > radius * radius) continue;
+                for (int dy = -6; dy <= 10; dy++) {
+                    Pos p = c.offset(dx, dy, dz);
+                    BlockInfo b = port.block(p);
+                    if (b.log() && !port.block(p.offset(0, -1, 0)).log()) {
+                        bases.add(p);
+                        break;
+                    }
+                }
+            }
+        bases.sort(Comparator.comparingDouble(p -> p.distSq(c)));
+        int done = 0, skipped = 0;
+        for (Pos b : bases) {
+            if (done >= max) break;
+            int errBefore = errors.size(), tasksBefore = tasks.size();
+            Map<String, Integer> bagBefore = new TreeMap<>(bag);
+            chop(new LinkedHashMap<>(Map.of("kind", "chop", "x", String.valueOf(b.x()), "y", String.valueOf(b.y()), "z", String.valueOf(b.z()))));
+            if (errors.size() > errBefore) { // árvore protegida, de outro reino, longe, ou não é árvore: pula
+                errors.subList(errBefore, errors.size()).clear();
+                while (tasks.size() > tasksBefore) tasks.remove(tasks.size() - 1);
+                bag.clear();
+                bag.putAll(bagBefore);
+                skipped++;
+                continue;
+            }
+            done++;
+        }
+        if (done == 0) {
+            errors.add("Não achei árvores que eu possa derrubar num raio de " + radius + " blocos" + (skipped > 0 ? " (" + skipped + " protegidas, longe ou de outro reino)" : "") + ".");
+            return;
+        }
+        if (skipped > 0) warnings.add(skipped + " árvore(s) ficaram (protegidas, de construção, de outro reino ou longe do rei).");
+        if (bases.size() - skipped > done) warnings.add("Há mais árvores na região: derrubo " + done + " por ordem (peça de novo para continuar).");
+        deposit();
+    }
+
+    private static final Map<String, List<String>> GATHER_BLOCKS = Map.of(
+            "pedra", List.of("minecraft:stone", "minecraft:andesite", "minecraft:diorite", "minecraft:granite", "minecraft:tuff", "minecraft:deepslate", "minecraft:cobblestone"),
+            "terra", List.of("minecraft:dirt", "minecraft:grass_block", "minecraft:coarse_dirt"),
+            "areia", List.of("minecraft:sand", "minecraft:red_sand"),
+            "cascalho", List.of("minecraft:gravel"),
+            "argila", List.of("minecraft:clay"),
+            "carvao", List.of("minecraft:coal_ore", "minecraft:deepslate_coal_ore"),
+            "ferro", List.of("minecraft:iron_ore", "minecraft:deepslate_iron_ore"),
+            "cobre", List.of("minecraft:copper_ore", "minecraft:deepslate_copper_ore"));
+
+    /** "Vá coletar pedra": acha os N blocos expostos mais perto (mina marcada, mira ou rei), quebra e guarda no armazém. */
+    private void gather(Map<String, String> s) {
+        String item = Text.norm(s.getOrDefault("item", "pedra")).replaceAll("s$", "");
+        if (item.matches("madeira|lenha|tronco")) {
+            Map<String, String> t = new LinkedHashMap<>(s);
+            t.put("count", String.valueOf(Math.max(1, Math.min(20, (num(s.getOrDefault("count", "32")) + 4) / 5))));
+            clearTrees(t);
+            return;
+        }
+        if (item.equals("rocha")) item = "pedra";
+        List<String> ids = GATHER_BLOCKS.get(item);
+        if (ids == null) {
+            errors.add("Não sei coletar «" + s.get("item") + "» (pedra, terra, areia, cascalho, argila, carvão, ferro, cobre, madeira).");
+            return;
+        }
+        boolean ore = !item.matches("terra|areia|cascalho|argila");
+        Pos c = gatherCenter(s, ore ? com.kingdomsai.core.kingdom.Marker.MINE : null);
+        if (c == null) {
+            errors.add("Não sei onde: mire no lugar, fique perto, ou marque a mina com a Bandeira.");
+            return;
+        }
+        boolean fromMarker = ore && k.markers.containsKey(com.kingdomsai.core.kingdom.Marker.MINE) && c.equals(k.markers.get(com.kingdomsai.core.kingdom.Marker.MINE));
+        if (!fromMarker && !nearKing(c)) return; // mina marcada é terra do reino: vale mesmo com o rei longe
+        int radius = Math.max(4, Math.min(24, num(s.getOrDefault("radius", "16"))));
+        int count = Math.max(1, Math.min(128, num(s.getOrDefault("count", "32"))));
+        Set<String> tools = tools(npc);
+        List<Pos> found = new ArrayList<>();
+        int prot = 0, foreign = 0;
+        for (int dx = -radius; dx <= radius; dx++)
+            for (int dz = -radius; dz <= radius; dz++)
+                for (int dy = -8; dy <= 8; dy++) {
+                    Pos p = c.offset(dx, dy, dz);
+                    BlockInfo b = port.block(p);
+                    if (!ids.contains(b.id())) continue;
+                    if (!exposed(p)) continue; // só o que dá para alcançar sem cavar túnel
+                    if (b.blockEntity() || b.nearFluid() || !b.breakable() || b.hardness() < 0) continue;
+                    if (protectedBy(p) != null) {
+                        prot++;
+                        continue;
+                    }
+                    if (foreignOwner(p) != null) {
+                        foreign++;
+                        continue;
+                    }
+                    if (!port.mayBreak(player, p)) continue;
+                    found.add(p);
+                }
+        if (found.isEmpty()) {
+            errors.add("Não achei " + item + " exposta num raio de " + radius + " blocos" + (foreign > 0 ? " (a que há é de outro reino)" : prot > 0 ? " (só em construções)" : "")
+                    + (ore && !k.markers.containsKey(com.kingdomsai.core.kingdom.Marker.MINE) ? ". Marque a mina com a Bandeira (\"marque aqui como mina\")." : "."));
+            return;
+        }
+        Pos center = c;
+        found.sort(Comparator.comparingDouble((Pos p) -> p.distSq(center)).thenComparing(p -> -p.y())); // perto e de cima para baixo
+        List<Pos> queue = new ArrayList<>(found.subList(0, Math.min(count, found.size())));
+        int noDrop = 0;
+        String missing = null;
+        for (Pos p : queue) {
+            BlockInfo b = port.block(p);
+            if (b.needsTool() && b.tool() != null && !tools.contains(b.tool())) {
+                noDrop++;
+                missing = b.tool();
+            } else if (b.drop() != null) bag.merge(b.drop(), 1, Integer::sum);
+        }
+        if (noDrop > 0) warnings.add(npc.name + " não tem " + toolName(missing) + ": " + noDrop + " bloco(s) vão demorar e não render nada.");
+        if (queue.size() < count) warnings.add("Só achei " + queue.size() + " bloco(s) de " + item + " expostos por perto.");
+        PhysicalJob.Task t = new PhysicalJob.Task();
+        t.kind = PhysicalJob.Kind.BREAK;
+        t.blocks = queue;
+        t.total = queue.size();
+        t.label = "coletar " + queue.size() + " de " + item + " perto de " + c.x() + " " + c.y() + " " + c.z();
+        tasks.add(t);
+        deposit();
+    }
+
+    private boolean exposed(Pos p) {
+        for (Pos n : new Pos[]{p.offset(1, 0, 0), p.offset(-1, 0, 0), p.offset(0, 1, 0), p.offset(0, -1, 0), p.offset(0, 0, 1), p.offset(0, 0, -1)})
+            if (port.block(n).air()) return true;
+        return false;
+    }
+
+    /** No fim da coleta, guarda tudo no armazém (ou nos baús do Salão): é lá que o estoque do reino mora. */
+    private void deposit() {
+        if (bag.isEmpty()) return;
+        if (storageChest() == null) {
+            warnings.add("Sem armazém nem baú no Salão Real: o que juntar fica na mochila de " + npc.name + " (/k bag " + npc.name + ").");
+            return;
+        }
+        put(new LinkedHashMap<>(Map.of("kind", "put", "to", "storage")));
+        if (!tasks.isEmpty()) tasks.get(tasks.size() - 1).auto = true;
     }
 
     // ------------------------------------------------------------------ fabricar

@@ -38,6 +38,10 @@ public final class Kingdom {
     public double honor = 60;
     /** Fama de crueldade (massacres, escravidão): 0..100, cai devagar. Pesa na estabilidade e na diplomacia (v3). */
     public double infamy = 0;
+    /** Tesouro físico: o que havia nos baús na última conferência (null = ainda não conferido) (v4). */
+    public Map<ResourceType, Integer> treasurySeen;
+    /** Itens do registro que não couberam nos baús (v4). */
+    public int treasuryOverflow;
     public double reliability = 60;
 
     /** Pontos marcados pelo rei com a Bandeira do Reino (spawn, praça, mina, bosque). */

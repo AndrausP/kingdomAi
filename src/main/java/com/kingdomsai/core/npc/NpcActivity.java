@@ -11,7 +11,8 @@ public enum NpcActivity {
     SLEEP("dormindo"),
     TALKING("falando com o rei"),
     SUMMONED("atendendo ao chamado do rei"),
-    MARCH("em campanha"),
+    MARCH("em marcha"),
+    TRAIN("treinando"),
     IMPRISONED("preso");
 
     public final String display;

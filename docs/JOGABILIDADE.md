@@ -62,6 +62,25 @@ Mire no lugar (o jogo acompanha a sua mira, inclusive no Manager) e fale com o s
 
 Com o mundo fechado (single player) nada anda — igual ao resto do Minecraft. Em servidor, com o rei deslogado, tudo segue.
 
+## Ordens que se veem, estoque nos baús, coleta e hierarquia (`OrdersSelfTest`)
+
+| Regra | Por quê | Teste |
+|---|---|---|
+| Pedido fora do catálogo vira planta sob medida (nome pedido; tipos celeiro/estábulo/poço/mercado/biblioteca/oficina/genérico) | "a IA cria a blueprint" | `pedido fora do catálogo vira planta sob medida` |
+| Tamanho 5–21, andares 1–4: fora disso ajusta e avisa (CLI e chat) | liberdade sem quebrar o gerador | `tamanho fora da faixa é ajustado e avisado` |
+| Quem recebe a ordem cumpre: construtor vai à obra; instrutor lidera o treino; líder leva o grupo | ordem dada a alguém é ele fazendo | `o construtor a quem o rei falou é quem vai à obra`, `a capitã lidera` |
+| Treino: escolhe soldados, convoca civis se faltar (poupa o último de cada ofício), formação de 4 por fileira, avança/recua a cada 10 s, +1 disciplina a cada 30 s, +1 coragem a cada 60 s | treino visível e com efeito | `chegaram ao campo e treinam`, `treinar aumenta a disciplina` |
+| Treino/deslocamento não prendem para a guerra (ataque tira a pessoa do treino); ordem com as mãos também | prioridade das ordens | `apresentar-se não prende ninguém para a guerra` |
+| Convocados se apresentam (andam até o capitão/quartel e ficam 1 min) | "eles ali, tlg" | `convocados vão se apresentar` |
+| Espada do arsenal por soldado (+30% força); sem espada, espada de madeira; arsenal reabastece quem está sem; liberado devolve | itens reais | `um com espada, outro sem`, `espada nova no arsenal vai para quem estava sem` |
+| Estoque nos baús do armazém/salão: o que o rei põe/tira muda o estoque; obra tira dos baús; sem itens, não constrói | "os itens do reino ficam nos baús" | `o rei tirou 10 pedregulho`, `o rei guardou 16 toras`, `a obra tira os materiais dos baús` |
+| Limpar árvores da região: várias árvores num raio, pula protegidas/de outro reino, replanta, guarda no armazém | coleta real | `árvores derrubadas de verdade`, `toras no baú e no estoque` |
+| Coletar pedra/terra/areia/carvão/ferro: blocos expostos mais perto da mina marcada, de cima para baixo, valida território/claim/água/construções, guarda no armazém | coleta real | `pedra extraída e guardada` |
+| Rotina ("daqui pra frente minere ferro e leve ao ferreiro") continua rotina | não confundir ordem única com postura | `rotina continua sendo rotina` |
+| Ordem composta vira várias ações; o conselho delega e explica (`↳ Delegação`) | hierarquia | `ordem composta vira 3 tarefas`, `o conselheiro diz quem ficou com cada uma` |
+| "Cuide da comida/moradia/defesa…": o conselho usa a mesma avaliação dos reinos de IA e executa em nome do rei | o conselheiro pensa e faz | `"cuide da comida": o conselho pensa e age` |
+| Locomoção: destino em chunk não carregado → anda 24 blocos por vez na direção dele; fora do raio de detalhe segue no Core | NPC nunca fica parado olhando | (adaptador `NpcRoutineGoal`) |
+
 ## Guerra e domínio
 
 Liberdade total pelo chat; o jogo cobra as consequências. Tudo passa pelo `ActionSystem` (validadores) e é testado em `MilitarySelfTest`.
@@ -105,7 +124,7 @@ Limites conhecidos: a batalha é simulada (os NPCs marcham de verdade, mas o cho
 
 ## O que só o build e o jogo confirmam
 
-O Core é testado aqui (276 verificações). O adaptador do Minecraft **não pôde ser compilado neste ambiente** (sem acesso aos servidores do NeoForge/Mojang). As APIs do NeoForge usadas foram conferidas no código-fonte oficial do 1.21.1; as chamadas do Minecraft "puro" abaixo foram escritas pela documentação e precisam do `./gradlew build`:
+O Core é testado aqui (315 verificações). O adaptador do Minecraft **não pôde ser compilado neste ambiente** (sem acesso aos servidores do NeoForge/Mojang). As APIs do NeoForge usadas foram conferidas no código-fonte oficial do 1.21.1; as chamadas do Minecraft "puro" abaixo foram escritas pela documentação e precisam do `./gradlew build`:
 `Block.getDrops`, `BlockState.spawnAfterBreak`, `ItemStack.isCorrectToolForDrops`, `Level.destroyBlock/destroyBlockProgress/mayInteract`, `ChestBlock.getContainer`, `HopperBlockEntity.addItem`, `RecipeManager.getAllRecipesFor` + `ShapedRecipe.getWidth/getHeight` + `Ingredient.getItems`, `ServerLevel.setChunkForced/getForcedChunks/sendParticles`, `ServerPlayer.setRespawnPosition`, `CustomData.update`, `Containers.dropItemStack`. (`ServerChatEvent.getRawText` foi conferido no código do NeoForge 1.21.1.)
 
 Roteiro rápido no jogo (mundo novo, perfil `kingdoms`):

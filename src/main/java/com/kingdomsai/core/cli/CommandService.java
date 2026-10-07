@@ -297,6 +297,12 @@ public final class CommandService {
                 act(k, player, ActionType.ATTACK, out, kv.toArray(String[]::new));
             }
             case "retreat", "recuar", "retirada" -> act(k, player, ActionType.RETREAT, out, "campaign", a.length > 1 ? a[1] : "");
+            case "train", "treinar", "treino" -> {
+                List<String> kv = new ArrayList<>();
+                if (a.length > 1 && a[1].matches("\\d+")) kv.addAll(List.of("amount", a[1]));
+                else if (a.length > 1) kv.addAll(List.of("npc", rest(a, 1)));
+                act(k, player, ActionType.TRAIN, out, kv.toArray(String[]::new));
+            }
             case "settle", "colonizar" -> act(k, player, ActionType.SETTLE, out, "amount", a.length > 1 && a[1].matches("\\d+") ? a[1] : "3",
                     "target", a.length > 2 ? rest(a, 2) : a.length > 1 && !a[1].matches("\\d+") ? rest(a, 1) : "aqui");
             case "campaigns", "campanhas", "tropas" -> campaigns(k, out);
@@ -355,7 +361,7 @@ public final class CommandService {
         out.add("build <planta> [qtd] [para <nome>] [prazo 5m|1d] · build custom tipo=casa largura=9 andares=2 parede=pedra");
         out.add("projects · deadline <nº> <tempo> · cancel <nº> · blueprints · blueprint design|show|delete|materials");
         out.add("army · army recruit [n] (sem n o general decide) · army release <n> [profissão] — exército não custa ouro, custa comida");
-        out.add("attack <reino|aqui|x z> [n] · retreat [nº] · campaigns · settle [n] (colonos para onde você está)");
+        out.add("attack <reino|aqui|x z> [n] · retreat [nº] · campaigns · settle [n] (colonos para onde você está) · train [n | instrutor]");
         out.add("captives · enslave <cativos|nome> [profissão] · free <escravos|cativos|nome|todos> [casa] · purge <vila|cativos|nome>");
         out.add("confirm / abort — confirma ou desiste da ordem irreversível que está esperando (também: \"confirmo\"/\"desisto\" no chat)");
         out.add("economy · territory · claim [n] · tax <0-4|up|down> · law <conscription|migration> <on|off>");
@@ -990,6 +996,8 @@ public final class CommandService {
                     Blueprint bp = core.registerSpec(spec);
                     out.add("✓ Planta criada: " + bp.id() + " — " + bp.displayName() + " · " + bp.sizeX() + "x" + bp.sizeZ() + "x" + bp.sizeY()
                             + " · custo " + costText(bp.cost()) + (bp.housing() > 0 ? " · abriga " + bp.housing() : ""));
+                    var adj = com.kingdomsai.core.construction.ParametricBlueprints.adjustments(p, spec);
+                    if (!adj.isEmpty()) out.add("⚠ Ajustei: " + String.join("; ", adj) + ".");
                     out.add("Construir: /k build " + bp.id() + " [prazo 1d]");
                 } catch (IllegalArgumentException e) {
                     out.add("✗ [invalid_param] " + e.getMessage());

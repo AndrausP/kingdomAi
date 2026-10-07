@@ -209,7 +209,12 @@ public final class CoreSelfTest {
         passed += mi[0];
         failed += mi[1];
 
-        // 17. Claude Code como IA (processo falso e script)
+        // 17. Ordens visíveis, plantas sob medida, tesouro nos baús, coleta, hierarquia
+        int[] od = OrdersSelfTest.run();
+        passed += od[0];
+        failed += od[1];
+
+        // 18. Claude Code como IA (processo falso e script)
         int[] cc = ClaudeCodeSelfTest.run();
         passed += cc[0];
         failed += cc[1];

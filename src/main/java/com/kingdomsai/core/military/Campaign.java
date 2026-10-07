@@ -13,7 +13,11 @@ import java.util.UUID;
 public final class Campaign {
     public enum Kind {
         ATTACK("Ataque"),
-        SETTLE("Colonização");
+        SETTLE("Colonização"),
+        /** Treino: o instrutor leva a tropa a um campo e eles treinam em formação (disciplina e coragem sobem). */
+        TRAIN("Treino"),
+        /** Ir a um lugar e ficar lá (reunir a tropa na praça, apresentar-se ao capitão, "fiquem aqui"). */
+        MOVE("Deslocamento");
 
         public final String display;
 
@@ -57,6 +61,8 @@ public final class Campaign {
     /** Ataque sem declaração de guerra (a guerra é declarada na hora, com desonra). */
     public boolean surprise;
     public long startTick, arriveTick, holdUntil, returnTick;
+    /** Treino/deslocamento: quanto tempo ficam no lugar. */
+    public int holdSeconds = 60;
     public int kills, losses, captives, cellsTaken;
     public String order = "";
     public String result = "";
@@ -66,6 +72,11 @@ public final class Campaign {
 
     public boolean live() {
         return status != null && status.live();
+    }
+
+    /** Guerra de verdade (fora de casa, come mais, não pode ser interrompida por outra ordem qualquer). */
+    public boolean war() {
+        return kind == Kind.ATTACK || kind == Kind.SETTLE;
     }
 
     public void log(String line) {

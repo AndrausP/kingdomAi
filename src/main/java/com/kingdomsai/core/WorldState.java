@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Todo o estado salvo do mundo. Cada entidade tem UUID — nunca só o nome. */
 public final class WorldState {
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     public int schemaVersion = SCHEMA_VERSION;
     public long seed = new Random().nextLong();

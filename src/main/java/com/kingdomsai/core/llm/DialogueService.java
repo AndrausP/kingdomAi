@@ -124,6 +124,8 @@ public final class DialogueService {
      */
     private List<String> execute(UUID kingdomId, UUID playerId, Plan plan, Npc listener, String orderText) {
         List<String> lines = new ArrayList<>();
+        boolean council = listener == null || listener.office == com.kingdomsai.core.npc.Office.ADVISOR;
+        List<String> delegated = new ArrayList<>();
         for (Plan.PlannedAction a : plan.actions()) {
             if (a.type() == null) {
                 lines.add("✗ " + a.rawType() + " — ação desconhecida (rejeitada pelo Schema Validator)");
@@ -143,15 +145,82 @@ public final class DialogueService {
                     && listener.office.allows(com.kingdomsai.core.npc.Permission.COMMAND) && listener.office != com.kingdomsai.core.npc.Office.KING)
                 params.put("npc", listener.name);
             if (t == com.kingdomsai.core.action.ActionType.ATTACK || t == com.kingdomsai.core.action.ActionType.OCCUPY
-                    || t == com.kingdomsai.core.action.ActionType.SETTLE) params.putIfAbsent("order", Text.truncate(orderText, 120));
+                    || t == com.kingdomsai.core.action.ActionType.SETTLE || t == com.kingdomsai.core.action.ActionType.TRAIN
+                    || t == com.kingdomsai.core.action.ActionType.MOVE) params.putIfAbsent("order", Text.truncate(orderText, 120));
+            // quem recebe a ordem é quem cumpre: o instrutor do treino, quem lidera o grupo, o construtor que vai à obra
+            boolean doer = listener != null && listener.office != com.kingdomsai.core.npc.Office.ADVISOR && listener.office != com.kingdomsai.core.npc.Office.KING;
+            if ((t == com.kingdomsai.core.action.ActionType.TRAIN || t == com.kingdomsai.core.action.ActionType.MOVE) && doer && params.get("npc") == null)
+                params.put("npc", listener.name);
+            if (t == com.kingdomsai.core.action.ActionType.BUILD && doer && listener.profession == com.kingdomsai.core.npc.Profession.BUILDER
+                    && params.get("builder") == null) params.put("builder", listener.name);
             if ((t == com.kingdomsai.core.action.ActionType.SUMMON || t == com.kingdomsai.core.action.ActionType.FOLLOW
                     || t == com.kingdomsai.core.action.ActionType.DISMISS) && listener != null && params.get("npc") == null)
                 params.put("npc", listener.name);
+            // o conselho delega: a obra vai para o construtor com menos serviço
+            if (council && t == com.kingdomsai.core.action.ActionType.BUILD && params.get("builder") == null) {
+                Npc b = core.construction().leastBusyBuilder(kingdomId);
+                if (b != null) params.put("builder", b.name);
+            }
             ActionResult r = core.actions().execute(new ActionRequest(kingdomId, playerId, ActionRequest.ActorKind.PLAYER,
                     a.type(), params, ActionRequest.Source.LLM));
             lines.addAll(resultLines(a.type().name(), r));
+            if (r.ok()) {
+                String who = delegate(t, params, r.message());
+                if (who != null) delegated.add(who);
+            }
         }
+        if (council && delegated.size() >= 1 && plan.actions().size() >= 2 || council && delegated.stream().anyMatch(d -> !d.startsWith("o conselho")))
+            lines.add("↳ Delegação: " + String.join("; ", delegated) + ".");
         return lines;
+    }
+
+    /** Quem ficou com a tarefa (para o conselho explicar a delegação). */
+    private static String delegate(com.kingdomsai.core.action.ActionType t, Map<String, String> params, String msg) {
+        String m = msg == null ? "" : msg;
+        java.util.regex.Matcher mm;
+        String who = params.get("builder") != null ? params.get("builder") : null;
+        String task;
+        switch (t) {
+            case BUILD -> {
+                mm = java.util.regex.Pattern.compile("\\d+x (.+?) planejada").matcher(m);
+                task = "obra (" + (mm.find() ? mm.group(1) : params.getOrDefault("name", params.getOrDefault("blueprint", "?"))) + ")";
+            }
+            case JOB -> {
+                mm = java.util.regex.Pattern.compile("para ([^:]+):\\n\\s+1\\. ([^\\n]+)").matcher(m);
+                if (mm.find()) {
+                    who = mm.group(1);
+                    task = mm.group(2);
+                } else task = "trabalho com as mãos";
+            }
+            case TRAIN -> {
+                mm = java.util.regex.Pattern.compile("Treino #\\d+: ([^(]+?) \\(").matcher(m);
+                if (mm.find()) who = mm.group(1);
+                task = "treinar a tropa";
+            }
+            case RECRUIT -> {
+                mm = java.util.regex.Pattern.compile("^([^(]+?) \\([^)]*\\) decidiu").matcher(m);
+                if (mm.find()) who = mm.group(1);
+                task = "convocar";
+            }
+            case ATTACK, OCCUPY -> {
+                mm = java.util.regex.Pattern.compile("— ([^(]+?) \\(").matcher(m);
+                if (mm.find()) who = mm.group(1);
+                task = "comandar o ataque";
+            }
+            case MOVE -> {
+                who = params.get("npc");
+                task = "levar o grupo";
+            }
+            case CHAIN -> task = "rotina de trabalho";
+            case GOAL -> {
+                who = "o conselho";
+                task = "cuidar de " + params.get("goal");
+            }
+            default -> {
+                return null;
+            }
+        }
+        return (who == null ? "o conselho" : who.trim()) + " → " + task;
     }
 
     /** "✓ TIPO: mensagem" — mensagens de várias linhas (planos de cadeia) viram várias linhas do chat. */
