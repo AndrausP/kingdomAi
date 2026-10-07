@@ -302,6 +302,17 @@ public final class McPhysicalPort implements PhysicalPort {
     }
 
     @Override
+    public boolean chunkForced(int chunkX, int chunkZ) {
+        return level.getForcedChunks().contains(net.minecraft.world.level.ChunkPos.asLong(chunkX, chunkZ));
+    }
+
+    @Override
+    public void forceChunk(int chunkX, int chunkZ, boolean on) {
+        // mesmo mecanismo do /forceload: o chunk continua carregado e "ticando" sem jogador por perto
+        level.setChunkForced(chunkX, chunkZ, on);
+    }
+
+    @Override
     public void animate(UUID npc, Pos at, Anim anim, int stage) {
         KingdomNpcEntity e = materializer.entity(npc);
         BlockPos pos = at == null ? null : bp(at);

@@ -16,6 +16,10 @@ public final class CoreConfig {
     public boolean aiKingdomsEnabled = true;
     public boolean constructionEnabled = true;
     public boolean diplomacyEnabled = true;
+    /** Ordens com as mãos continuam com o rei longe: o jogo mantém carregados os chunks onde o súdito trabalha. */
+    public boolean keepOrderChunksLoaded = true;
+    /** Limite de chunks mantidos carregados à distância (desempenho do servidor). */
+    public int maxForcedChunks = 16;
 
     public CoreConfig() {}
 

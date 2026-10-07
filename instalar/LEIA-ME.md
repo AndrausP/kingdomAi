@@ -46,7 +46,9 @@ Fale com um súdito (botão direito → chat) e ele **adota a rotina daqui em di
 
 ### Ordens com as mãos: quebrar, baús, fabricar
 
-Mire e fale: *"quebre esse bloco"*, *"cave um buraco 3x3x3 aqui"*, *"abra um túnel de 10 blocos"*, *"corte essa árvore"*, *"pegue 5 barras de ferro desse baú"*, *"guarde tudo no armazém"*, *"faça uma picareta de ferro e me entregue"*. Os itens são **reais** (saem do baú, caem dos blocos, a picareta vai para a sua mão). O súdito planeja sozinho o que falta (pega ferro no baú, faz tábuas → gravetos), respeita as receitas do Minecraft e nunca quebra construções, baús, terra de outro reino ou blocos colados em água/lava. Comandos: `jobs`, `job <nome> dig 3x3x3`, `job <nome> craft 4 tocha entregar`, `bag <nome>`. Regras completas e o que foi testado: [`docs/JOGABILIDADE.md`](docs/JOGABILIDADE.md).
+Mire e fale: *"quebre esse bloco"*, *"cave um buraco 3x3x3 aqui"*, *"abra um túnel de 10 blocos"*, *"corte essa árvore"*, *"pegue 5 barras de ferro desse baú"*, *"guarde tudo no armazém"*, *"faça uma picareta de ferro e me entregue"*. Os itens são **reais** (saem do baú, caem dos blocos, a picareta vai para a sua mão). O súdito planeja sozinho o que falta (pega ferro no baú, faz tábuas → gravetos), respeita as receitas do Minecraft e nunca quebra construções, baús, terra de outro reino ou blocos colados em água/lava. Comandos: `jobs`, `job <nome> dig 3x3x3`, `job <nome> craft 4 tocha entregar`, `bag <nome>`.
+
+**Mesmo longe**: dê a ordem e vá embora — o jogo mantém carregados só os chunks onde o súdito está trabalhando e solta ao terminar (limite configurável). Rotinas e obras também seguem. Se pediu "me entregue" e você está longe/offline, fica no baú do armazém. Ao voltar para a vila você recebe um **relatório** do que aconteceu (`/k report`). Regras completas e o que foi testado: [`docs/JOGABILIDADE.md`](docs/JOGABILIDADE.md).
 
 ### Chamar súditos e o tamanho da vila
 

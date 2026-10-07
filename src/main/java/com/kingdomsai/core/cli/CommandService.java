@@ -53,7 +53,7 @@ public final class CommandService {
     public static final List<String> SUBCOMMANDS = List.of(
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
             "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
-            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag");
+            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag", "report");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -193,6 +193,7 @@ public final class CommandService {
                 out.add(com.kingdomsai.core.construction.VillageWall.describe(core, k));
                 out.add("Para cercar tudo: /k build muralha [height=3-6] · ou peça \"construa um muro ao redor da vila\".");
             }
+            case "report", "relatorio" -> out.addAll(core.reports().latest(player));
             case "jobs", "ordens" -> jobs(k, out);
             case "job", "tarefa" -> job(k, player, a, out);
             case "bag", "mochila" -> {
@@ -236,6 +237,7 @@ public final class CommandService {
         out.add("books · book <nº> — livros e cartas do reino");
         out.add("job <nome> break|dig [3x3x3]|tunnel [n]|clear [5x5]|chop — mire no bloco/árvore antes");
         out.add("job <nome> take <qtd> <item> [armazem] · put [qtd item] · craft <qtd> <item> [entregar] · give · job cancel <nº> · jobs · bag <nome>");
+        out.add("report — o que aconteceu enquanto você esteve fora (as ordens continuam mesmo longe)");
         out.add("call [nome] · follow [nome] [minutos] · dismiss [nome] — chama até onde você está (no Manager: tecla G)");
         out.add("village — tamanho da vila · build muralha [height=4] — muro sob medida ao redor da vila");
         out.add("order <texto livre> · ai explain · ai ask <pergunta> · ai status");

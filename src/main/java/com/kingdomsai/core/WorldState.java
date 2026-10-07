@@ -39,6 +39,10 @@ public final class WorldState {
     /** Ordens físicas: quebrar, baús, fabricar (v2). */
     public Map<UUID, com.kingdomsai.core.skill.PhysicalJob> jobs = new LinkedHashMap<>();
     public int jobCounter;
+    /** Chunks que ESTE mod mantém carregados ("x:z"), para soltar certinho mesmo depois de reiniciar. */
+    public Set<String> forcedChunks = new LinkedHashSet<>();
+    /** Último tick em que cada rei foi visto (relatório "enquanto Vossa Majestade esteve fora"). */
+    public Map<UUID, Long> playerLastSeen = new HashMap<>();
     public List<GameEvent> events = new ArrayList<>();
 
     public WorldState() {}

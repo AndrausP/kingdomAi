@@ -146,7 +146,17 @@ public final class ServerRuntime {
 
     /** O Core sabe onde cada rei está ("venha aqui", "me siga"). No Manager é a posição da câmera. */
     private void trackPlayers() {
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) track(p);
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            track(p);
+            if (p.level() != overworld) continue;
+            // voltou para a vila depois de um tempo fora: relatório do que os súditos fizeram
+            List<String> report = core.reports().tick(p.getUUID(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()));
+            if (!report.isEmpty()) notify(p.getUUID(), report);
+        }
+    }
+
+    public void onPlayerLeave(ServerPlayer p) {
+        core.playerLeft(p.getUUID());
     }
 
     /** Posição e mira do rei: "venha aqui", "quebre esse bloco", "pegue desse baú". */
@@ -176,6 +186,7 @@ public final class ServerRuntime {
         } else if (k != null) {
             p.sendSystemMessage(Component.literal("👑 Bem-vindo de volta, rei de " + k.name + ". ").withStyle(ChatFormatting.GOLD)
                     .append(Component.literal("Pressione M para o Manager · /k help").withStyle(ChatFormatting.GRAY)));
+            for (String l : core.reports().onLogin(p.getUUID())) p.sendSystemMessage(ChatFormat.line(l));
         }
     }
 

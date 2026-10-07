@@ -29,6 +29,8 @@ public final class ServerEvents {
     @SubscribeEvent
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
         if (e.getEntity() instanceof ServerPlayer sp && ManagerMode.isOn(sp)) ManagerMode.exit(sp);
+        ServerRuntime rt = ServerRuntime.get();
+        if (rt != null && e.getEntity() instanceof ServerPlayer sp) rt.onPlayerLeave(sp); // ordens com "me entregue" vão para o armazém
     }
 
     @SubscribeEvent

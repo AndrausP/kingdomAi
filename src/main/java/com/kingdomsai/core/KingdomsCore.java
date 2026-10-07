@@ -43,6 +43,7 @@ public final class KingdomsCore {
     private WorldPort world = WorldPort.NONE;
     /** Última posição conhecida de cada jogador (adaptador e CLI atualizam) — para "venha aqui" e "me siga". */
     private final Map<UUID, Pos> playerPositions = new HashMap<>();
+    private final Set<UUID> online = new HashSet<>();
     /** Para onde cada jogador está olhando (bloco na mira + direção) — "quebre isso", "abra esse baú". */
     private final Map<UUID, Look> playerLooks = new HashMap<>();
     private com.kingdomsai.core.port.PhysicalPort physical = com.kingdomsai.core.port.PhysicalPort.NONE;
@@ -64,6 +65,7 @@ public final class KingdomsCore {
     private final DialogueService dialogue;
     private final com.kingdomsai.core.work.WorkSystem work;
     private final com.kingdomsai.core.skill.SkillSystem skills;
+    private final com.kingdomsai.core.event.AwayReport reports;
 
     public KingdomsCore(WorldState state, CoreConfig config) {
         this.state = state;
@@ -87,6 +89,7 @@ public final class KingdomsCore {
         this.dialogue = new DialogueService(this);
         this.work = new com.kingdomsai.core.work.WorkSystem(this);
         this.skills = new com.kingdomsai.core.skill.SkillSystem(this);
+        this.reports = new com.kingdomsai.core.event.AwayReport(this);
         wireReactions();
     }
 
@@ -293,7 +296,19 @@ public final class KingdomsCore {
     }
 
     public void updatePlayerPos(UUID player, Pos pos) {
-        if (player != null && pos != null) playerPositions.put(player, pos);
+        if (player != null && pos != null) {
+            playerPositions.put(player, pos);
+            online.add(player);
+        }
+    }
+
+    /** O jogador saiu do jogo (o adaptador avisa). A última posição continua conhecida. */
+    public void playerLeft(UUID player) {
+        online.remove(player);
+    }
+
+    public boolean isOnline(UUID player) {
+        return player != null && online.contains(player);
     }
 
     public Pos playerPos(UUID player) {
@@ -363,6 +378,10 @@ public final class KingdomsCore {
 
     public com.kingdomsai.core.skill.SkillSystem skills() {
         return skills;
+    }
+
+    public com.kingdomsai.core.event.AwayReport reports() {
+        return reports;
     }
 
     public com.kingdomsai.core.port.PhysicalPort physical() {

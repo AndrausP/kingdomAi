@@ -46,6 +46,22 @@ Mire no lugar (o jogo acompanha a sua mira, inclusive no Manager) e fale com o s
 | Longe do rei a área descarrega: a ordem espera (não falha) | LOD — nada acontece sem o mundo carregado | (SkillSystem `waitFor(-1)`) |
 | Prioridade: chamado > ordem com as mãos > cadeia/rotina > profissão | previsível para o jogador | `cumprindo uma ordem do rei` na cadeia |
 
+## Longe do rei (persistência)
+
+| O quê | Longe do rei | Teste (`PersistenceSelfTest`) |
+|---|---|---|
+| Rotinas/cadeias (minerar→forja, lavoura, lenha, livros, cartas) | continuam sempre: são simuladas sem precisar do mundo carregado | `rotina seguiu com o rei longe` |
+| Obras | continuam (LOD) e os blocos aparecem quando o rei chega | (CoreSelfTest) |
+| Ordens com as mãos (quebrar, baú, fabricar) | o jogo **mantém carregados só os chunks da etapa atual** (como o `/forceload`) e solta ao terminar | `chunks da obra mantidos`, `chunks soltos` |
+| Limite de chunks à distância | `simulation.max_forced_chunks` (16); ordens além disso esperam na fila, por ordem de chegada | `segunda ordem esperou na fila` |
+| Servidor que não quer chunks forçados | `/k config set simulation.keep_order_chunks_loaded false`: a ordem **espera** (não falha) e continua quando o rei volta | `ESPERA com motivo claro` |
+| Chunk que o jogador já segurava com `/forceload` | usado, mas nunca assumido nem solto pelo mod | `chunk do /forceload do jogador` |
+| "Me entregue" com o rei longe (>96 blocos) ou fora do jogo | o súdito não sai atrás dele pelo mundo: guarda no baú do armazém e o aviso diz onde | `picareta guardada no baú do armazém` |
+| Salvar/fechar no meio | a ordem, a etapa e os blocos já feitos ficam no save; ao abrir, continua de onde parou; chunks de sessões antigas sem ordem são soltos | `save guarda a ordem no meio`, `sobra de chunk antiga foi solta` |
+| Volta para a vila (após 2+ min a mais de 160 blocos) ou login | **relatório**: ciclos das rotinas e o que guardaram, ordens concluídas, obras, problemas, variação dos estoques; `/k report` repete | `na volta: relatório` |
+
+Com o mundo fechado (single player) nada anda — igual ao resto do Minecraft. Em servidor, com o rei deslogado, tudo segue.
+
 ## Limites conhecidos
 
 - O NPC usa ferramentas "imaginárias" do ofício (não gastam durabilidade); ferramentas na mochila contam como se ele as tivesse.

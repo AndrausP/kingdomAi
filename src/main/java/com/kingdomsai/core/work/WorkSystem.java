@@ -250,8 +250,11 @@ public final class WorkSystem {
             c.cycles++;
             String out = c.cycleOutput.isEmpty() ? "" : " Guardado: " + ChainValidator.summary(c.cycleOutput) + ".";
             c.addLog(core.tick(), "Ciclo " + c.cycles + " completo." + out);
+            StringBuilder data = new StringBuilder();
+            for (var e : c.cycleOutput.entrySet()) data.append(data.length() == 0 ? "" : ";").append(e.getKey().name()).append('=').append(e.getValue());
             core.bus().publish(core.tick(), EventType.CHAIN_CYCLE_COMPLETED, GameEvent.Severity.INFO, c.kingdomId, n.id,
-                    "Cadeia #" + c.number + " «" + c.name + "»: ciclo " + c.cycles + " completo." + out, Map.of("chain", c.id.toString()));
+                    "Cadeia #" + c.number + " «" + c.name + "»: ciclo " + c.cycles + " completo." + out,
+                    Map.of("chain", c.id.toString(), "out", data.toString()));
             c.cycleOutput.clear();
         }
     }

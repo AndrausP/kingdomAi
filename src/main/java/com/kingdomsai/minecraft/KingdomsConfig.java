@@ -33,6 +33,8 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.IntValue RIVAL_KINGDOMS;
     public static final ModConfigSpec.IntValue RIVAL_DISTANCE;
     public static final ModConfigSpec.IntValue MAX_NPCS_PER_KINGDOM;
+    public static final ModConfigSpec.BooleanValue KEEP_ORDER_CHUNKS;
+    public static final ModConfigSpec.IntValue MAX_FORCED_CHUNKS;
 
     // [construction]
     public static final ModConfigSpec.BooleanValue CONSTRUCTION_ENABLED;
@@ -77,6 +79,10 @@ public final class KingdomsConfig {
         RIVAL_KINGDOMS = b.defineInRange("rival_kingdoms", 2, 0, 8);
         RIVAL_DISTANCE = b.defineInRange("rival_distance", 320, 160, 3000);
         MAX_NPCS_PER_KINGDOM = b.defineInRange("max_npcs_per_kingdom", 60, 5, 500);
+        KEEP_ORDER_CHUNKS = b.comment("Ordens com as mãos (quebrar, baús, fabricar) continuam com o rei longe: mantém carregados só os chunks onde o súdito trabalha.")
+                .define("keep_order_chunks_loaded", true);
+        MAX_FORCED_CHUNKS = b.comment("Máximo de chunks mantidos carregados à distância (desempenho). Ordens além disso esperam na fila.")
+                .defineInRange("max_forced_chunks", 16, 0, 256);
         b.pop();
 
         b.push("construction");
@@ -126,6 +132,8 @@ public final class KingdomsConfig {
         KEYS.put("simulation.rival_kingdoms", RIVAL_KINGDOMS);
         KEYS.put("simulation.economic_tick_seconds", ECONOMIC_TICK);
         KEYS.put("simulation.strategic_tick_seconds", STRATEGIC_TICK);
+        KEYS.put("simulation.keep_order_chunks_loaded", KEEP_ORDER_CHUNKS);
+        KEYS.put("simulation.max_forced_chunks", MAX_FORCED_CHUNKS);
         KEYS.put("construction.enabled", CONSTRUCTION_ENABLED);
         KEYS.put("construction.builder_blocks_per_second", BUILDER_BLOCKS_PER_SECOND);
         KEYS.put("construction.max_blocks_per_tick", MAX_BLOCKS_PER_TICK);
@@ -182,6 +190,8 @@ public final class KingdomsConfig {
         c.aiKingdomsEnabled = AI_KINGDOMS.get();
         c.constructionEnabled = CONSTRUCTION_ENABLED.get();
         c.diplomacyEnabled = DIPLOMACY_ENABLED.get();
+        c.keepOrderChunksLoaded = KEEP_ORDER_CHUNKS.get();
+        c.maxForcedChunks = MAX_FORCED_CHUNKS.get();
         return c;
     }
 

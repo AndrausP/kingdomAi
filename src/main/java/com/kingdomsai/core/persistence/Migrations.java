@@ -39,11 +39,14 @@ public final class Migrations {
         if (s.chains == null) s.chains = new LinkedHashMap<>();
         if (s.documents == null) s.documents = new LinkedHashMap<>();
         if (s.jobs == null) s.jobs = new LinkedHashMap<>();
+        if (s.forcedChunks == null) s.forcedChunks = new LinkedHashSet<>();
+        if (s.playerLastSeen == null) s.playerLastSeen = new HashMap<>();
         for (var j : s.jobs.values()) {
             if (j.tasks == null) j.tasks = new ArrayList<>();
             if (j.log == null) j.log = new ArrayList<>();
             if (j.gained == null) j.gained = new TreeMap<>();
             if (j.reason == null) j.reason = "";
+            if (j.note == null) j.note = "";
             for (var t : j.tasks) if (t.blocks == null) t.blocks = new ArrayList<>();
             if (j.number > s.jobCounter) s.jobCounter = j.number;
         }

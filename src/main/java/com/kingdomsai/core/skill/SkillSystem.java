@@ -35,11 +35,16 @@ public final class SkillSystem {
     public static final int BLOCK_TIMEOUT = 20;
     public static final int MOVE_TIMEOUT = 120;
     public static final int WAIT_FAIL = 90;
+    /** Além disso o rei está "longe" para receber em mãos: o súdito guarda no armazém. */
+    public static final int GIVE_RANGE = 96;
 
     private final KingdomsCore core;
+    private final ChunkKeeper chunks;
+    private boolean chunksDirty = true;
 
     public SkillSystem(KingdomsCore core) {
         this.core = core;
+        this.chunks = new ChunkKeeper(core);
         core.bus().subscribe(EventType.NPC_DIED, e -> {
             for (PhysicalJob j : core.state().jobs.values())
                 if (j.status.live() && j.npcId.equals(e.actorId())) fail(j, "quem fazia morreu");
@@ -64,6 +69,7 @@ public final class SkillSystem {
         job.stateSince = core.tick();
         job.status = PhysicalJob.Status.ACTIVE;
         core.state().jobs.put(job.id, job);
+        chunksDirty = true;
         n.jobId = job.id;
         n.remember(core.tick(), "O rei me mandou " + job.name + ".", 45, null, "ordem", "trabalho");
         job.addLog(core.tick(), "Ordem: " + Text.truncate(orderText == null ? job.name : orderText, 80));
@@ -83,6 +89,7 @@ public final class SkillSystem {
     }
 
     private void release(PhysicalJob j) {
+        chunksDirty = true;
         Npc n = core.npc(j.npcId);
         if (n != null && j.id.equals(n.jobId)) {
             n.jobId = null;
@@ -98,7 +105,7 @@ public final class SkillSystem {
         j.addLog(core.tick(), "Concluída." + got);
         n.remember(core.tick(), "Cumpri a ordem do rei: " + j.name + "." + got, 45, null, "trabalho");
         core.bus().publish(core.tick(), EventType.JOB_DONE, GameEvent.Severity.GOOD, j.kingdomId, n.id,
-                n.name + " terminou: " + j.name + "." + got, Map.of("job", j.id.toString()));
+                n.name + " terminou: " + j.name + "." + got + (j.note.isBlank() ? "" : " " + j.note), Map.of("job", j.id.toString()));
     }
 
     private void fail(PhysicalJob j, String why) {
@@ -130,13 +137,36 @@ public final class SkillSystem {
     // ------------------------------------------------------------------ tick
 
     public void tickSecond() {
+        // chunks primeiro: a etapa de agora precisa do mundo carregado mesmo com o rei longe
+        if (chunksDirty || core.tick() % 100 == 0) {
+            chunks.sync();
+            chunksDirty = false;
+        }
         for (PhysicalJob j : List.copyOf(core.state().jobs.values())) {
             if (!j.status.live()) continue;
+            int cursor = j.cursor;
             try {
                 tick(j);
             } catch (RuntimeException e) {
                 fail(j, "erro inesperado (" + e.getClass().getSimpleName() + ")");
             }
+            if (j.cursor != cursor) chunksDirty = true; // etapa nova, chunks novos
+        }
+    }
+
+    public ChunkKeeper chunks() {
+        return chunks;
+    }
+
+    /** Área da etapa descarregada: por quê, e se dá para esperar. */
+    private void unloaded(PhysicalJob j) {
+        if (!core.config().keepOrderChunksLoaded)
+            waitFor(j, "a área descarregou (Vossa Majestade se afastou; manter carregado está desligado)", -1);
+        else if (chunks.starved(j.id))
+            waitFor(j, "na fila: limite de " + core.config().maxForcedChunks + " chunks carregados à distância", -1);
+        else {
+            chunksDirty = true;
+            waitFor(j, "carregando a área", -1);
         }
     }
 
@@ -189,7 +219,7 @@ public final class SkillSystem {
             if (t.blocks.isEmpty()) return true;
             Pos p = t.blocks.get(0);
             if (!port().isLoaded(p)) {
-                waitFor(j, "a área descarregou (Vossa Majestade se afastou)", -1);
+                unloaded(j);
                 return false;
             }
             BlockInfo info = port().block(p);
@@ -256,6 +286,10 @@ public final class SkillSystem {
 
     private boolean take(PhysicalJob j, PhysicalJob.Task t, Npc n) {
         if (!reachOrWalk(j, t, n, t.at, 3)) return false;
+        if (!port().isLoaded(t.at)) {
+            unloaded(j);
+            return false;
+        }
         if (t.progress++ < 1) {
             port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_OPEN, 0);
             return false;
@@ -289,6 +323,10 @@ public final class SkillSystem {
 
     private boolean put(PhysicalJob j, PhysicalJob.Task t, Npc n) {
         if (!reachOrWalk(j, t, n, t.at, 3)) return false;
+        if (!port().isLoaded(t.at)) {
+            unloaded(j);
+            return false;
+        }
         if (t.progress++ < 1) {
             port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_OPEN, 0);
             return false;
@@ -318,6 +356,10 @@ public final class SkillSystem {
 
     private boolean craft(PhysicalJob j, PhysicalJob.Task t, Npc n) {
         if (t.at != null && !reachOrWalk(j, t, n, t.at, 3)) return false;
+        if (t.at != null && !port().isLoaded(t.at)) {
+            unloaded(j);
+            return false;
+        }
         if (t.done >= t.count) return true;
         boolean furnace = "FURNACE".equals(t.block);
         int seconds = furnace ? 5 : ItemNames.smithing(t.item) ? 4 : 2;
@@ -384,10 +426,9 @@ public final class SkillSystem {
 
     private boolean give(PhysicalJob j, PhysicalJob.Task t, Npc n) {
         Pos king = core.playerPos(j.orderedBy);
-        if (king == null) {
-            waitFor(j, "Vossa Majestade não está no mundo", -1);
-            return false;
-        }
+        boolean away = king == null || !core.isOnline(j.orderedBy) || n.pos == null || n.pos.distXZ(king) > GIVE_RANGE;
+        // Rei longe ou fora do jogo: não sai atrás dele pelo mundo — guarda no armazém e avisa onde.
+        if (away || t.at != null) return giveToStorage(j, t, n);
         if (!reachOrWalk(j, t, n, king, 3)) return false;
         Predicate<String> m = ItemNames.matcher(t.item);
         Map<String, Integer> items = new TreeMap<>();
@@ -414,12 +455,61 @@ public final class SkillSystem {
         return true;
     }
 
+    private boolean giveToStorage(PhysicalJob j, PhysicalJob.Task t, Npc n) {
+        Kingdom k = core.kingdom(j.kingdomId);
+        if (t.at == null) {
+            t.at = storageChest(k);
+            if (t.at == null) {
+                j.note = "Vossa Majestade estava longe e não há armazém: " + n.name + " guardou consigo (" + summary(itemsFor(n, t)) + ").";
+                j.addLog(core.tick(), j.note);
+                return true;
+            }
+            j.addLog(core.tick(), "Vossa Majestade está longe: vou guardar no armazém.");
+        }
+        if (!reachOrWalk(j, t, n, t.at, 3)) return false;
+        if (!port().isLoaded(t.at)) {
+            unloaded(j);
+            return false;
+        }
+        if (port().container(t.at) == null) {
+            fail(j, "o baú do armazém sumiu");
+            return false;
+        }
+        Map<String, Integer> items = itemsFor(n, t);
+        port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_OPEN, 0);
+        Map<String, Integer> rest = port().put(n.id, t.at, items);
+        for (var e : items.entrySet()) n.bag.merge(e.getKey(), -(e.getValue() - rest.getOrDefault(e.getKey(), 0)), Integer::sum);
+        n.bag.values().removeIf(v -> v <= 0);
+        port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_CLOSE, 0);
+        j.note = "Vossa Majestade estava longe: " + summary(items) + " ficou no baú do armazém em " + t.at + ".";
+        j.addLog(core.tick(), j.note);
+        return true;
+    }
+
+    private static Map<String, Integer> itemsFor(Npc n, PhysicalJob.Task t) {
+        Predicate<String> m = ItemNames.matcher(t.item);
+        Map<String, Integer> items = new TreeMap<>();
+        int left = t.count <= 0 ? Integer.MAX_VALUE : t.count;
+        for (var e : n.bag.entrySet()) {
+            if (left <= 0) break;
+            if (!m.test(e.getKey())) continue;
+            int v = Math.min(left, e.getValue());
+            items.put(e.getKey(), v);
+            left -= v;
+        }
+        return items;
+    }
+
     private boolean plant(PhysicalJob j, PhysicalJob.Task t, Npc n) {
         if (n.bag.getOrDefault(t.block, 0) <= 0) {
             j.addLog(core.tick(), "Nenhuma muda caiu das folhas; não deu para replantar.");
             return true;
         }
         if (!reachOrWalk(j, t, n, t.at, 4)) return false;
+        if (!port().isLoaded(t.at)) {
+            unloaded(j);
+            return false;
+        }
         if (port().block(t.at).air() && port().place(n.id, t.at, t.block)) {
             n.bag.merge(t.block, -1, Integer::sum);
             n.bag.values().removeIf(v -> v <= 0);
@@ -459,7 +549,7 @@ public final class SkillSystem {
         if (t == null) return null;
         Pos target = switch (t.kind) {
             case BREAK, CHOP -> t.blocks.isEmpty() ? null : t.blocks.get(0);
-            case GIVE -> core.playerPos(j.orderedBy);
+            case GIVE -> t.at != null ? t.at : core.playerPos(j.orderedBy);
             default -> t.at;
         };
         if (target == null) return null;

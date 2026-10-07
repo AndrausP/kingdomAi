@@ -189,6 +189,11 @@ public final class CoreSelfTest {
         passed += sk[0];
         failed += sk[1];
 
+        // 13. Persistência: ordens continuam com o rei longe
+        int[] ps = PersistenceSelfTest.run();
+        passed += ps[0];
+        failed += ps[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }
