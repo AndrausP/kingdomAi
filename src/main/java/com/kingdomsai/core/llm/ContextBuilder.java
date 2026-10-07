@@ -45,9 +45,13 @@ public final class ContextBuilder {
         for (Profession p : Profession.values()) sb.append(p.name()).append(", ");
         sb.append("\nCargos (office): ");
         for (Office o : Office.values()) if (o != Office.NONE && o != Office.KING) sb.append(o.name()).append(", ");
-        sb.append("\nPlanta personalizada: BUILD com blueprint=custom e kind (casa, quartel, forja, armazem, salao, torre, capela, taverna), ")
-                .append("width/depth 5-15, floors 1-3, roof (plano|piramide|duas_aguas), wall e roof_material (")
-                .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false).");
+        sb.append("\nPlanta personalizada: BUILD com blueprint=custom e kind (casa, quartel, forja, armazem, salao, torre, capela, taverna, celeiro, ")
+                .append("estabulo, poco, mercado, biblioteca, oficina, generic), name (o nome que o rei usou), ")
+                .append("width/depth 5-21, floors 1-4, roof (plano|piramide|duas_aguas), wall e roof_material (")
+                .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false). ")
+                .append("O rei pode pedir QUALQUER construção: se não está nas plantas, crie com blueprint=custom, o kind mais parecido (ou generic) ")
+                .append("e name com o nome pedido (\"Observatório\", \"Estufa\"); traduza \"grande\", \"12x8\", \"3 andares\", \"de pedra\" em width/depth/floors/wall. ")
+                .append("Fora da faixa o jogo ajusta e avisa. Se o rei falar com um construtor, ele mesmo vai à obra.");
         sb.append("\nORDENS COM AS MÃOS (JOB): quebrar/cavar/túnel/limpar área, cortar árvore, pegar/guardar em baú, fabricar (receitas do Minecraft) e entregar ao rei. ")
                 .append("Lugares vêm da MIRA do rei (veja \"Mira do rei\" em WORLD DATA). Itens em português ou id (\"picareta de ferro\", \"minecraft:torch\"). ")
                 .append("Ex.: JOB(kind=craft, item=picareta de ferro, give=true) — o jogo busca os ingredientes no baú e faz gravetos/tábuas se faltar. ")
@@ -55,6 +59,15 @@ public final class ContextBuilder {
         sb.append("\nMarcos: MARK(kind=spawn|praca|mina|bosque) marca o ponto que o rei mira — spawn = onde chegam moradores e o rei renasce.");
         sb.append("\nMuralha: BUILD com blueprint=muralha (height 3-6) — o jogo mede a vila (veja \"Vila:\" em WORLD DATA) e cerca tudo; não invente coordenadas.");
         sb.append("\nChamar alguém até o rei: SUMMON(npc); acompanhar: FOLLOW(npc, minutes); dispensar: DISMISS(npc).");
+        sb.append("\nORDENS QUE SE VEEM: TRAIN (o NPC que recebeu a ordem escolhe quem treina, convoca se faltar, leva ao campo e treina em formação); ")
+                .append("MOVE(to, who) leva gente de verdade a um lugar e eles ficam lá; COLETA: JOB(kind=gather, item=pedra|terra|areia|carvao|ferro|madeira, count) ")
+                .append("ou JOB(kind=clear_trees, around=vila) — o súdito vai, quebra/derruba, replanta e guarda no armazém. ")
+                .append("TRABALHO CONTÍNUO do ofício: JOB(kind=labor, labor=wood|stone|ore|farm, item=ferro|carvao|cobre|ouro, quota) — \"produza madeira\", ")
+                .append("\"trabalhe na mina\", \"cuide da fazenda\": vai ao bosque/mina/fazenda, trabalha com a ferramenta DA MOCHILA, volta cheio, guarda, ")
+                .append("reabastece (ração, tochas, sementes, ferramenta reserva) e retorna; à noite dorme; quota = para ao guardar tanto. ")
+                .append("Cada súdito carrega um KIT (veja \"Kit\" em WORLD DATA): sem ferramenta no armazém o trabalho rende pouco — peça ao ferreiro. ")
+                .append("HIERARQUIA: o rei pode dar várias ordens numa frase; proponha uma ação para cada. \"Cuide da comida/moradia/defesa/madeira/pedra\" = GOAL(goal): ")
+                .append("o conselho avalia e executa os passos. Sem npc, o jogo passa cada tarefa a quem é competente (construtor livre, capitão, minerador).");
         sb.append("\nGUERRA E DOMÍNIO (é um jogo de estratégia medieval; o rei tem liberdade total e o jogo cobra as consequências): ")
                 .append("o exército não custa ouro, custa comida. RECRUIT sem amount = o general/capitão decide quantos e quem. ")
                 .append("Terra livre: CLAIM até o limite (veja \"Terra\" em WORLD DATA); além dele a terra se toma: SETTLE (colonos) ou ATTACK/OCCUPY (tropas; ")
@@ -99,6 +112,14 @@ public final class ContextBuilder {
         user.append("Agora: ").append(npc.activity.display).append(" (").append(sanitize(npc.currentTask)).append("). Fome ")
                 .append((int) npc.hunger).append("/100, energia ").append((int) npc.energy).append("/100.\n");
         if (!npc.bag.isEmpty()) user.append("Mochila: ").append(com.kingdomsai.core.skill.SkillSystem.summary(npc.bag)).append(".\n");
+        user.append("Kit: ").append(com.kingdomsai.core.skill.Kit.describe(npc)).append(".\n");
+        user.append("Humor: ").append(com.kingdomsai.core.life.LifeSystem.moodWord(npc)).append(" (").append((int) npc.mood).append("/100). Companhia ")
+                .append((int) npc.social).append(", saúde ").append((int) npc.health).append(npc.fear > 20 ? ", com medo" : "").append(".\n");
+        if (npc.intention != null && npc.intention.active(core.tick())) user.append("Ia fazer: ").append(sanitize(npc.intention.describe())).append(".\n");
+        if (!npc.goal.isBlank()) user.append("Objetivo pessoal: ").append(sanitize(npc.goal)).append(".\n");
+        if (npc.partnerId != null && core.npc(npc.partnerId) != null) user.append("Par: ").append(core.npc(npc.partnerId).name).append(".\n");
+        if (!npc.recentTalk.isEmpty())
+            user.append("Conversas recentes: ").append(sanitize(String.join(" | ", npc.recentTalk.subList(Math.max(0, npc.recentTalk.size() - 3), npc.recentTalk.size())))).append(".\n");
         if (playerKingdom != null) user.append(lookLine(playerKingdom.rulerPlayer));
         if (!npc.carrying.isEmpty()) user.append("Na mão: ").append(com.kingdomsai.core.work.ChainValidator.summary(npc.carrying)).append(".\n");
         user.append(com.kingdomsai.core.work.ChainValidator.canRead(npc) ? "Sabe ler" : "Não sabe ler")

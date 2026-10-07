@@ -28,6 +28,60 @@ Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1"
 
 Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `attack <reino>`, `settle 3`, `claim`, `captives`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`. **Tudo dá para fazer só pelo chat** — os comandos são atalho.
 
+### Roteiro de início (para não perder no começo)
+
+Um reino novo começa com comida para ~15 minutos de jogo: **sem fazenda, o povo passa fome**. Por isso existe o roteiro (`/k roteiro`), que aparece ao fundar o reino e no painel do Manager:
+
+1. **Comida garantida** — fazenda pronta e produção ≥ consumo (*"Conselheiro, cuide da comida"*).
+2. **Armazém com baús** — o estoque mora nos baús (*"construam um armazém"*).
+3. **Casa para todos** — ninguém dormindo ao relento (*"construam 2 casas"*).
+4. **Madeira e pedra entrando** — marque bosque e mina com a Bandeira; *"produza madeira"* ao lenhador, *"trabalhe na mina"* ao minerador.
+5. **Guarda para a noite** — 1 guarda para cada 8 moradores.
+6. **Vida na vila** — praça marcada e uma capela ou taverna.
+
+Nos **3 primeiros dias** o conselheiro cuida da etapa da vez sozinho, pelos mesmos validadores das suas ordens (faz a fazenda, passa camponeses para a lavoura sem tirar o único lenhador, ergue armazém e casas, põe lenhador e minerador para trabalhar quando os marcos existem). Ele avisa no chat o que fez e qual é o próximo passo. Se a população crescer e a comida voltar a faltar, a comida volta a ser a etapa da vez. Nos **2 primeiros dias ninguém morre de fome** (enfraquece, mas a saúde não passa de 20 para baixo). Para jogar sem ajuda: `/k roteiro auto off`; para pedir ao conselheiro agora: `/k roteiro agora`.
+
+### Ordens que se veem, plantas sob medida, estoque nos baús e hierarquia
+
+- **Qualquer construção**: *"construam um observatório de pedra com 3 andares"*, *"um celeiro 12x8"*, *"um poço"*, *"um mercado enorme"* — o que não está no catálogo vira **planta sob medida** com o nome pedido (celeiro, estábulo, poço, mercado, biblioteca, oficina ou estrutura genérica). Até 21×21 e 4 andares; se pedir mais, o jogo **ajusta e avisa** em vez de recusar. Falou com um construtor? **Ele** vai à obra.
+- **Treinar a tropa**: *"Capitã, treine a tropa"* — ela escolhe quem treina, **convoca se faltar gente** (poupando o último lenhador/minerador/construtor), leva todos ao quartel (ou a um campo na borda da vila) e treinam em formação por 3 min: disciplina e coragem sobem. **Ir a um lugar**: *"soldados, vão para a praça"*, *"fiquem aqui"*, *"reúna a tropa no quartel"* — eles vão de verdade e esperam lá. Convocados **se apresentam** a quem os chamou.
+- **Armas reais**: cada soldado/guarda pega uma espada do **arsenal** (as que o ferreiro forja); sem espada, treina com espada de madeira e luta pior; liberado, devolve a espada.
+- **O estoque do reino mora nos baús** do armazém (ou do Salão Real): tábuas, pedregulho, pão, barras, espadas. O que você **põe** nos baús entra no reino; o que **tira**, sai; obras tiram os materiais de lá; sem material nos baús, não constrói.
+- **Coleta de verdade**: *"limpe as árvores da região"* (várias árvores, replanta as mudas), *"vá coletar pedra"* / *"minere 40 pedras"* / *"busque areia"* — o súdito vai à mina marcada (ou onde você mira), quebra só o que pode (validação de território, construções, claims, água) e **guarda no armazém**.
+- **Hierarquia**: *"conselho, construam um mercado, treinem a tropa e colete pedra"* — o conselheiro divide em tarefas, passa cada uma a quem é competente e diz quem ficou com o quê. *"Cuide da comida"* (ou moradia, defesa, madeira, pedra, território): ele avalia o reino e executa os passos em seu nome.
+
+### Gente de verdade: necessidades, humor, conversas e laços
+
+O NPC é só o corpo; quem vive é o Core. Cada súdito tem **fome, energia, companhia, saúde e medo**, e um **humor** (feliz, contente, tranquilo, chateado, triste, desesperado). O humor depende de casa, par, amigos, luto, fome, liberdade e da situação do reino, e muda o ritmo de trabalho e a lealdade. Quem fica infeliz demais por muito tempo vai embora.
+
+- **Dia pessoal**: cada um acorda e dorme no seu horário (os disciplinados cedo, os sociáveis tarde). Toma café em casa, almoça no serviço (marmita) e janta. Com 2 guardas ou mais, metade faz o turno da noite. No **fim da tarde** cada um faz o que combina com ele: praça ou taverna (sociável), capela (religioso), biblioteca (curioso; quem não sabe ler pode aprender), visita ao par ou a um amigo, passeio, casa.
+- **Conversas** entre eles, por perto de você no chat (*«Ana» Sabe o que aconteceu? ...*, raio configurável). O assunto sai da vida deles: boatos, fome, guerra, impostos, o rei cruel, o trabalho, amizade, briga entre rivais, namoro. **Boatos correm de boca em boca**, perdendo força a cada boca (*"Ana me contou: ..."*). Daí nascem **amizades, rivalidades e casais**; casais moram juntos e passam as tardes juntos, e a morte de um deixa o outro de luto.
+- **Reflexos**: quem vê monstro **foge e grita** por socorro, e os guardas livres vão até lá. Ferido descansa em casa e melhora. **Agredido lembra**: se foi o rei, passa a temê-lo, perde lealdade e o boato corre.
+- **Objetivos pessoais**: ter uma casa, aprender a ler, fazer amizade com alguém, conquistar alguém, rezar todo dia. Eles mudam o que a pessoa faz à tarde e são comemorados quando se cumprem.
+- **Com IA** (Claude Code, Ollama, etc.): os importantes (conselheiro, oficiais, famosos) decidem a agenda pela IA a cada ~2 minutos. A IA diz o que fazer e por quê, e o jogo valida pessoas e lugares reais. As conversas deles também são escritas pela IA. Limite próprio de chamadas (`ai.npc_life_per_minute`); sem IA, as regras fazem tudo.
+- `/k life` (vida da vila: humor médio, casais, amizades, brigas, boatos, o que se ouve) · `/k npc inspect <nome>` (necessidades, humor, intenção, objetivo, par, horário, conversas) · `/k perf` (tempo do Core por tick).
+
+### Mochila, kit do ofício e trabalho contínuo (o NPC é só o corpo; o estado mora no Core)
+
+Cada súdito tem **mochila de verdade** (27 espaços, pilhas de 64, ferramenta ocupa 1) e um **kit do ofício**. Chegam com o básico (ferramentas de pedra); o armazém repõe o resto e o ferreiro forja a reserva de ferramentas.
+
+| Ofício | Carrega |
+|---|---|
+| Fazendeiro | enxada, sementes, balde, comida |
+| Lenhador | machado + machado reserva, mudas, comida |
+| Minerador | picareta + picareta reserva, tochas, comida |
+| Construtor | picareta, machado, blocos, comida |
+| Ferreiro | materiais (ferro), carvão, combustível, ferramenta |
+| Guarda | espada (arsenal), escudo, armadura, elmo, comida |
+| Soldado | arma (arsenal), armadura, elmo, escudo, suprimentos |
+
+- **Trabalho contínuo pelo chat**: *"produza madeira"*, *"trabalhe na mina de ferro"*, *"cuide da fazenda"*, *"colha o trigo"*, *"produza 64 toras"* (meta: para quando guardar tanto). Ele confere o kit (sem tocha/ração/picareta passa no armazém antes), vai ao bosque/mina/fazenda, trabalha, **volta quando a mochila enche** (ou falta comida/ferramenta), guarda, reabastece e **retorna ao mesmo ponto**. À noite guarda o que juntou e dorme; de manhã volta.
+- **Lenhador**: corta só árvores de verdade (tronco + folhas) do bosque, recolhe toras e mudas, **replanta**, troca o machado gasto pela reserva. **Minerador**: abre galeria 1×2 controlada a partir da mina marcada (para diante de água/lava/construção e vira), tira o minério da parede, **põe tocha a cada 8 blocos**; o ferro bruto vai ao armazém e o ferreiro **funde com carvão**. **Fazendeiro**: ara a terra com a enxada, busca sementes no armazém, planta, espera crescer, colhe só o maduro e replanta; o trigo vira comida do reino.
+- **Ferramentas gastam** (madeira 59, pedra 131, ferro 250 usos; ferro corta mais rápido que pedra). Quebrou: pega a reserva; sem reserva, volta ao armazém; sem nenhuma, segue na mão (devagar, e pedra/minério não rendem). **Prática**: quem trabalha mais fica mais rápido.
+- **Longe da vista** (área descarregada) o trabalho continua **simulado** no Core com as mesmas regras (rende no ritmo da ferramenta, gasta, come, leva ao armazém) e o mundo não muda até alguém chegar; aí ele volta ao trabalho de verdade.
+- **Nenhum bloco é quebrado direto pela IA**: tudo vira ordem validada — território do reino, construções e claims protegidos, ferramenta, distância (alcance de 5 blocos), etapa da tarefa e um **limite global de blocos por segundo** (`max_breaks_per_second`, padrão 40).
+- `/k bag <nome>`: mochila, kit (ferramenta e % de vida, reserva, ração, espaços) e o que falta para trabalhar.
+
 ### Guerra e domínio (liberdade total, o jogo cobra)
 
 - **Exército não custa ouro, custa comida.** *"Convoquem 5 soldados"* ou, para alguém competente, *"Capitão, monte um exército"* — sem número, o general/capitão decide quantos (olha a maior ameaça) e quem (camponeses primeiro, os mais corajosos). Soldado come 2 por ciclo, 3 em campanha, guarda 1,5 (civil 1). Sem limite de tamanho: o limite é a comida.

@@ -144,7 +144,11 @@ public final class SkillSystem {
 
     // ------------------------------------------------------------------ tick
 
+    /** Blocos quebrados neste segundo por todos os súditos (limite por tick contra lag e grief em massa). */
+    private int breaksThisSecond;
+
     public void tickSecond() {
+        breaksThisSecond = 0;
         // chunks primeiro: a etapa de agora precisa do mundo carregado mesmo com o rei longe
         if (chunksDirty || core.tick() % 100 == 0) {
             chunks.sync();
@@ -193,12 +197,18 @@ public final class SkillSystem {
             j.reason = "atendendo ao chamado do rei";
             return;
         }
+        Kingdom kk = core.kingdom(j.kingdomId);
+        if (j.continuous) {
+            n.onDuty = true; // produz de verdade: a economia não conta de novo
+            if (!continuousStep(j, n, kk)) return;
+        }
         PhysicalJob.Task t = j.current();
         if (t == null) {
             finish(j, n);
             return;
         }
         n.onDuty = true;
+        meal(j, n, kk);
         n.heldItem = held(n, t);
         n.currentTask = "⚒ " + t.label + (t.total > 1 ? " (" + t.done + "/" + t.total + ")" : t.kind == PhysicalJob.Kind.CRAFT ? " (" + t.done + "/" + t.count + ")" : "");
         Kingdom k = core.kingdom(j.kingdomId);
@@ -209,20 +219,23 @@ public final class SkillSystem {
             case CRAFT -> craft(j, t, n);
             case GIVE -> give(j, t, n);
             case PLANT -> plant(j, t, n);
+            case RESUPPLY -> resupply(j, t, n, k);
+            case STORE -> store(j, t, n, k);
+            case FARM -> farm(j, t, n, k);
         };
         if (taskDone) {
             j.addLog(core.tick(), "✓ " + t.label + (t.kind == PhysicalJob.Kind.BREAK || t.kind == PhysicalJob.Kind.CHOP ? " (" + t.done + " quebrados)" : ""));
             j.cursor++;
             t.progress = 0;
-            if (j.current() == null) finish(j, n);
+            if (j.current() == null && !j.continuous) finish(j, n);
         }
     }
 
     // ------------------------------------------------------------------ tarefas
 
     private boolean breaking(PhysicalJob j, PhysicalJob.Task t, Npc n, Kingdom k) {
-        Set<String> tools = JobPlanner.tools(n);
-        double budget = speed(n, t.kind);
+        String skill = t.kind == PhysicalJob.Kind.CHOP ? "lenhar" : n.profession == Profession.MINER ? "minerar" : "cavar";
+        double budget = speed(n, t.kind) * (1 + 0.05 * n.skillLevel(skill));
         for (int guard = 0; guard < 6; guard++) {
             if (t.blocks.isEmpty()) return true;
             Pos p = t.blocks.get(0);
@@ -231,18 +244,24 @@ public final class SkillSystem {
                 return false;
             }
             BlockInfo info = port().block(p);
-            // revalida na hora: algo pode ter mudado desde a ordem
+            // revalida na hora: algo pode ter mudado desde a ordem (bloco, construção, claim de outro mod, território)
+            java.util.UUID owner = core.state().territory.ownerAt(p);
             if (info.air() || info.fluid() || info.blockEntity() || info.nearFluid() || !info.breakable()
-                    || JobPlanner.protectedBy(core, p) != null || !port().mayBreak(j.orderedBy, p)) {
+                    || JobPlanner.protectedBy(core, p) != null || !port().mayBreak(j.orderedBy, p) || owner != null && !owner.equals(j.kingdomId)) {
                 t.blocks.remove(0);
                 t.progress = 0;
                 continue;
             }
             if (!inReach(n, p, 5)) {
+                // a caminhada até o local (mina/bosque longe do armazém) não conta: o "não alcanço" só corre perto do bloco
+                boolean near = n.pos != null && n.pos.distXZ(p) <= 6;
                 if (!p.equals(t.targetBlock)) {
                     t.targetBlock = p;
                     t.targetSince = core.tick();
-                } else if (core.tick() - t.targetSince > 20L * BLOCK_TIMEOUT) {
+                    t.nearSince = -1;
+                }
+                if (near && t.nearSince < 0) t.nearSince = core.tick();
+                if (core.tick() - (near ? t.nearSince : t.targetSince) > 20L * (near ? BLOCK_TIMEOUT : MOVE_TIMEOUT)) {
                     j.addLog(core.tick(), "Não alcancei " + ItemNames.display(info.id()) + " em " + p + " — pulei.");
                     t.blocks.remove(0);
                     t.progress = 0;
@@ -251,27 +270,21 @@ public final class SkillSystem {
                 active(j, "a caminho do bloco");
                 return false;
             }
-            if (bagTotal(n) >= JobPlanner.BAG_CAPACITY) {
-                Pos chest = storageChest(k);
-                if (chest == null) {
-                    waitFor(j, "mochila cheia e não há baú no armazém", WAIT_FAIL);
-                    return false;
-                }
-                PhysicalJob.Task dep = new PhysicalJob.Task();
-                dep.kind = PhysicalJob.Kind.PUT;
-                dep.at = chest;
-                dep.item = "#all";
-                dep.auto = true;
-                dep.label = "esvaziar a mochila no armazém";
-                j.tasks.add(j.cursor, dep);
-                j.addLog(core.tick(), "Mochila cheia: indo ao armazém.");
+            if (Inventory.full(n)) {
+                tripToStorage(j, k, "Mochila cheia (" + Inventory.slotsUsed(n.bag) + "/" + Inventory.SLOTS + "): indo guardar no armazém.");
+                return false;
+            }
+            if (breaksThisSecond >= core.config().maxBreaksPerSecond) {
+                active(j, "esperando a vez (limite de blocos por segundo)");
                 return false;
             }
             active(j, "quebrando");
             t.targetBlock = p;
             t.targetSince = core.tick();
-            boolean hasTool = info.tool() == null || tools.contains(info.tool());
-            double cost = Math.max(0.15, info.hardness()) * (hasTool ? 1.0 : info.needsTool() ? 5.0 : 2.0);
+            String tool = info.tool() == null ? null : Inventory.bestTool(n, info.tool());
+            boolean hasTool = info.tool() == null || tool != null;
+            n.heldItem = tool != null ? tool : "";
+            double cost = Math.max(0.15, info.hardness()) * (tool != null ? 1.0 / Inventory.speedFactor(tool) : hasTool ? 1.0 : info.needsTool() ? 5.0 : 2.0);
             port().animate(n.id, p, PhysicalPort.Anim.SWING, 0);
             if (t.progress + budget < cost) {
                 t.progress += budget;
@@ -280,13 +293,13 @@ public final class SkillSystem {
             }
             budget -= cost - t.progress;
             t.progress = 0;
-            Map<String, Integer> drops = port().breakBlock(n.id, p, hasTool ? info.tool() : null);
-            for (var e : drops.entrySet()) {
-                n.bag.merge(e.getKey(), e.getValue(), Integer::sum);
-                j.gained.merge(e.getKey(), e.getValue(), Integer::sum);
-            }
+            Map<String, Integer> drops = port().breakBlock(n.id, p, tool);
+            breaksThisSecond++;
+            collect(j, n, p, drops);
             t.blocks.remove(0);
             t.done++;
+            n.skillXp.merge(skill, 1, Integer::sum);
+            if (tool != null && Inventory.wear(n, tool)) toolBroke(j, n, k, tool, info.tool());
             if (budget <= 0.05) return t.blocks.isEmpty();
         }
         return t.blocks.isEmpty();
@@ -313,7 +326,7 @@ public final class SkillSystem {
         for (var e : new ArrayList<>(c.entrySet())) {
             if (got >= want) break;
             if (!m.test(e.getKey())) continue;
-            int room = JobPlanner.BAG_CAPACITY - bagTotal(n);
+            int room = Inventory.room(n, e.getKey());
             int n2 = port().take(n.id, t.at, e.getKey(), Math.min(Math.min(want - got, e.getValue()), room));
             if (n2 > 0) n.bag.merge(e.getKey(), n2, Integer::sum);
             got += n2;
@@ -510,7 +523,14 @@ public final class SkillSystem {
 
     private boolean plant(PhysicalJob j, PhysicalJob.Task t, Npc n) {
         if (n.bag.getOrDefault(t.block, 0) <= 0) {
-            j.addLog(core.tick(), "Nenhuma muda caiu das folhas; não deu para replantar.");
+            boolean torch = t.block.endsWith("torch");
+            Kingdom k = core.kingdom(j.kingdomId);
+            if (torch && k != null && Kit.stock(k, t.block) > 0) {
+                tripToStorage(j, k, "Acabaram as tochas: indo buscar no armazém (a galeria não fica no escuro).");
+                return false;
+            }
+            j.addLog(core.tick(), torch ? "Sem tochas, nem no armazém: a galeria ficou escura em " + t.at + "."
+                    : "Nenhuma muda caiu das folhas e não há na mochila; não deu para replantar.");
             return true;
         }
         if (!reachOrWalk(j, t, n, t.at, 4)) return false;
@@ -522,9 +542,354 @@ public final class SkillSystem {
             n.bag.merge(t.block, -1, Integer::sum);
             n.bag.values().removeIf(v -> v <= 0);
             port().animate(n.id, t.at, PhysicalPort.Anim.PLANT, 0);
-            j.addLog(core.tick(), "Replantou " + ItemNames.display(t.block) + ".");
+            j.addLog(core.tick(), t.block.endsWith("torch") ? "Pôs uma tocha em " + t.at + "." : "Replantou " + ItemNames.display(t.block) + ".");
         }
         return true;
+    }
+
+    // ------------------------------------------------------------------ mochila, ferramentas, comida, armazém
+
+    /** Itens que caíram vão para a mochila; o que não couber cai no chão ao lado (e ele vai esvaziar). */
+    private void collect(PhysicalJob j, Npc n, Pos at, Map<String, Integer> drops) {
+        Map<String, Integer> spill = new TreeMap<>();
+        for (var e : drops.entrySet()) {
+            int fit = Math.min(e.getValue(), Inventory.room(n, e.getKey()));
+            if (fit > 0) n.bag.merge(e.getKey(), fit, Integer::sum);
+            if (fit < e.getValue()) spill.put(e.getKey(), e.getValue() - fit);
+            j.gained.merge(e.getKey(), e.getValue(), Integer::sum);
+        }
+        if (!spill.isEmpty()) {
+            port().drop(at, spill);
+            spill.forEach((id, c) -> n.spilled.merge(id, c, Integer::sum)); // recolhe se passar perto com espaço
+            j.addLog(core.tick(), "Mochila cheia: " + summary(spill) + " ficou no chão.");
+        }
+    }
+
+    /** Ferramenta quebrou: troca pela reserva; sem reserva, volta ao armazém buscar outra (se houver). */
+    private void toolBroke(PhysicalJob j, Npc n, Kingdom k, String tool, String type) {
+        String next = Inventory.bestTool(n, type);
+        core.bus().publish(core.tick(), EventType.TOOL_BROKEN, GameEvent.Severity.INFO, j.kingdomId, n.id,
+                ItemNames.display(tool) + " de " + n.name + " quebrou" + (next != null ? "; pegou a reserva (" + ItemNames.display(next) + ")." : "."));
+        if (next != null) {
+            j.addLog(core.tick(), ItemNames.display(tool) + " quebrou: trocou pela reserva.");
+            return;
+        }
+        if (k != null && JobPlanner.kingdomHasTool(k, type)) {
+            j.addLog(core.tick(), ItemNames.display(tool) + " quebrou e não há reserva: indo ao armazém buscar outra.");
+            j.tasks.add(j.cursor, JobPlanner.resupplyTask(JobPlanner.storagePoint(core, k), List.of(type)));
+        } else j.addLog(core.tick(), ItemNames.display(tool) + " quebrou e o armazém não tem outra: segue na mão (devagar). O ferreiro repõe.");
+    }
+
+    /** Ida ao armazém: guardar o que juntou e reabastecer o kit; depois volta ao serviço (a tarefa atual continua). */
+    private void tripToStorage(PhysicalJob j, Kingdom k, String why) {
+        if (k == null) return;
+        PhysicalJob.Task cur = j.current();
+        if (cur != null && (cur.kind == PhysicalJob.Kind.STORE || cur.kind == PhysicalJob.Kind.RESUPPLY)) return;
+        Pos at = JobPlanner.storagePoint(core, k);
+        j.tasks.add(j.cursor, JobPlanner.resupplyTask(at, List.of()));
+        j.tasks.add(j.cursor, JobPlanner.storeTask(at));
+        j.addLog(core.tick(), why);
+    }
+
+    /** Trabalhando dá fome: come da ração quando precisa; sem ração e com fome, volta ao armazém. */
+    private void meal(PhysicalJob j, Npc n, Kingdom k) {
+        if ((core.tick() / 20) % 30 != 0) return; // fome e cansaço correm na vida (LifeSystem); aqui ele come da ração
+        if (n.hunger < 60) {
+            String ate = Inventory.eat(n);
+            if (ate != null) j.addLog(core.tick(), "Comeu " + ItemNames.display(ate) + " da ração.");
+            else if (n.hunger < 30) {
+                if (hasFood(k)) tripToStorage(j, k, "Sem ração e com fome: indo ao armazém.");
+                else if (j.log.isEmpty() || !j.log.get(j.log.size() - 1).contains("trabalhando com fome"))
+                    j.addLog(core.tick(), "Sem ração e o armazém sem comida: trabalhando com fome (mais devagar).");
+            }
+        }
+    }
+
+    /** O armazém tem algo de comer para a ração? */
+    private static boolean hasFood(Kingdom k) {
+        if (k == null) return false;
+        if (Kit.stock(k, "minecraft:bread") > 0) return true;
+        for (var e : k.goods.entrySet()) if (e.getValue() > 0 && Inventory.nutrition(e.getKey()) > 0) return true;
+        return false;
+    }
+
+    /** Anda até o armazém (ou, com a área descarregada, leva o tempo do caminho) — no armazém o mundo não precisa estar à vista. */
+    private boolean atStorage(PhysicalJob j, PhysicalJob.Task t, Npc n) {
+        Pos at = t.at;
+        if (at == null) return true;
+        boolean visible = port().isLoaded(at) && n.materialized;
+        if (visible) return reachOrWalk(j, t, n, at, 3);
+        if (inReach(n, at, 3)) return true;
+        double dist = n.pos == null ? 0 : n.pos.distXZ(at);
+        t.progress += ABSTRACT_WALK_SPEED;
+        active(j, "a caminho do armazém");
+        if (t.progress * 1.0 < dist) return false;
+        n.pos = at;
+        t.progress = 0;
+        return true;
+    }
+
+    /** Blocos por segundo andando fora da vista (igual ao NpcScheduler). */
+    private static final double ABSTRACT_WALK_SPEED = 4.0;
+
+    private boolean resupply(PhysicalJob j, PhysicalJob.Task t, Npc n, Kingdom k) {
+        if (!atStorage(j, t, n)) return false;
+        if (port().isLoaded(t.at) && port().container(t.at) != null) port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_OPEN, 0);
+        Map<String, Integer> moved = new TreeMap<>();
+        // ferramenta de outro serviço (o fazendeiro mandado cortar árvore precisa de machado)
+        if (t.item != null && !t.item.isBlank())
+            for (String type : t.item.split(",")) {
+                if (type.isBlank() || Inventory.bestTool(n, type) != null) continue;
+                String best = null;
+                for (var e : k.goods.entrySet())
+                    if (e.getValue() > 0 && type.equals(Inventory.toolType(e.getKey())) && (best == null || Inventory.tier(e.getKey()) > Inventory.tier(best))) best = e.getKey();
+                if (best != null) {
+                    k.goods.merge(best, -1, Integer::sum);
+                    k.goods.values().removeIf(v -> v <= 0);
+                    n.bag.merge(best, 1, Integer::sum);
+                    moved.merge(best, 1, Integer::sum);
+                }
+            }
+        Kit.Trip trip = Kit.resupply(k, n);
+        trip.moved().forEach((id, c) -> moved.merge(id, c, Integer::sum));
+        core.treasury().sync(k);
+        if (port().isLoaded(t.at) && port().container(t.at) != null) port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_CLOSE, 0);
+        j.addLog(core.tick(), moved.isEmpty() ? "Nada a pegar no armazém." : "Pegou no armazém: " + summary(moved) + ".");
+        if (!trip.lacking().isEmpty()) j.addLog(core.tick(), "Faltou no armazém: " + String.join(", ", trip.lacking()) + ".");
+        return true;
+    }
+
+    private boolean store(PhysicalJob j, PhysicalJob.Task t, Npc n, Kingdom k) {
+        if (!atStorage(j, t, n)) return false;
+        if (port().isLoaded(t.at) && port().container(t.at) != null) port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_OPEN, 0);
+        Kit.Trip trip = Kit.deposit(k, n);
+        core.treasury().sync(k);
+        if (port().isLoaded(t.at) && port().container(t.at) != null) port().animate(n.id, t.at, PhysicalPort.Anim.CHEST_CLOSE, 0);
+        if (trip.nothing()) return true;
+        int units = produce(j, trip.moved());
+        j.produced += units;
+        j.trips++;
+        j.addLog(core.tick(), "Guardou no armazém: " + summary(trip.moved()) + ".");
+        core.bus().publish(core.tick(), EventType.STORAGE_TRIP, GameEvent.Severity.INFO, j.kingdomId, n.id,
+                n.name + " guardou no armazém: " + summary(trip.moved()) + (j.continuous ? " (produção: " + j.produced + (j.quota > 0 ? "/" + j.quota : "") + ")" : "") + ".");
+        return true;
+    }
+
+    /** Quanto do que foi guardado conta como produção do serviço (toras, pedra, minério, colheita). */
+    private static int produce(PhysicalJob j, Map<String, Integer> moved) {
+        int u = 0;
+        for (var e : moved.entrySet()) {
+            String id = e.getKey();
+            boolean counts = switch (j.labor) {
+                case "wood" -> id.endsWith("_log") || id.endsWith("_wood");
+                case "stone" -> id.equals("minecraft:cobblestone") || id.equals("minecraft:cobbled_deepslate") || id.endsWith("stone");
+                case "ore" -> id.startsWith("minecraft:raw_") || id.equals("minecraft:coal") || id.endsWith("_ore");
+                case "farm" -> id.equals("minecraft:wheat") || id.equals("minecraft:carrot") || id.equals("minecraft:potato") || id.equals("minecraft:beetroot");
+                default -> true;
+            };
+            if (counts) u += e.getValue();
+        }
+        return u;
+    }
+
+    /** Lavoura: colhe o maduro e replanta; vazio com terra arada → planta; terra → ara com a enxada e planta. */
+    private boolean farm(PhysicalJob j, PhysicalJob.Task t, Npc n, Kingdom k) {
+        if (t.blocks.isEmpty()) return true;
+        Pos p = t.blocks.get(0);
+        if (!reachOrWalk(j, t, n, p, 4)) return false;
+        if (!port().isLoaded(p)) {
+            unloaded(j);
+            return false;
+        }
+        // revalida na hora: terra do reino, proteção de outro mod, limite de blocos por segundo
+        java.util.UUID owner = core.state().territory.ownerAt(p);
+        if (owner != null && !owner.equals(j.kingdomId) || !port().mayBreak(j.orderedBy, p)) {
+            t.blocks.remove(0);
+            return t.blocks.isEmpty();
+        }
+        if (Inventory.full(n)) {
+            tripToStorage(j, k, "Mochila cheia de colheita: indo ao armazém.");
+            return false;
+        }
+        if (breaksThisSecond >= core.config().maxBreaksPerSecond) {
+            active(j, "esperando a vez (limite de blocos por segundo)");
+            return false;
+        }
+        active(j, "na lavoura");
+        String seed = "minecraft:wheat_seeds";
+        int g = port().growth(p);
+        if (g >= 100) {
+            collect(j, n, p, port().breakBlock(n.id, p, null));
+            breaksThisSecond++;
+            n.skillXp.merge("colher", 1, Integer::sum);
+            port().animate(n.id, p, PhysicalPort.Anim.SWING, 0);
+        }
+        BlockInfo here = port().block(p), below = port().block(p.offset(0, -1, 0));
+        if (here.air() && below.id().matches(".*:(dirt|grass_block|coarse_dirt)")) {
+            String hoe = Inventory.bestTool(n, "hoe");
+            if (hoe == null) j.addLog(core.tick(), "Sem enxada: não deu para arar em " + p.offset(0, -1, 0) + ".");
+            else if (port().till(n.id, p.offset(0, -1, 0))) {
+                n.heldItem = hoe;
+                if (Inventory.wear(n, hoe)) toolBroke(j, n, k, hoe, "hoe");
+                below = port().block(p.offset(0, -1, 0));
+            }
+        }
+        if (here.air() && below.id().endsWith("farmland")) {
+            if (n.bag.getOrDefault(seed, 0) > 0 && port().place(n.id, p, t.block == null ? "minecraft:wheat" : t.block)) {
+                n.bag.merge(seed, -1, Integer::sum);
+                n.bag.values().removeIf(v -> v <= 0);
+                n.skillXp.merge("plantar", 1, Integer::sum);
+                n.heldItem = seed;
+                port().animate(n.id, p, PhysicalPort.Anim.PLANT, 0);
+            } else if (n.bag.getOrDefault(seed, 0) <= 0) {
+                if (k != null && Kit.stock(k, seed) > 0) {
+                    tripToStorage(j, k, "Acabaram as sementes: indo buscar no armazém.");
+                    return false;
+                }
+                j.addLog(core.tick(), "Sem sementes no armazém: canteiro vazio em " + p + ".");
+            }
+        }
+        t.blocks.remove(0);
+        t.done++;
+        return t.blocks.isEmpty();
+    }
+
+    // ------------------------------------------------------------------ trabalho contínuo
+
+    private static boolean night(long dayTime) {
+        long t = Math.floorMod(dayTime, 24000L);
+        return t >= 12600 && t < 23400;
+    }
+
+    /**
+     * Trabalho contínuo: à noite guarda o que juntou e dorme; de dia planeja o próximo lote (árvore, galeria, canteiros),
+     * cumpre a meta e, com a área descarregada (rei longe), segue simulado no Core. @return true se a tarefa atual deve rodar.
+     */
+    private boolean continuousStep(PhysicalJob j, Npc n, Kingdom k) {
+        if (k == null) return true;
+        if (j.quota > 0 && j.produced >= j.quota && j.current() == null) {
+            j.note = "Meta cumprida: " + j.produced + " no armazém.";
+            finish(j, n);
+            return false;
+        }
+        if (night(core.world().dayTime())) {
+            boolean carrying = !Kit.surplus(n).isEmpty();
+            PhysicalJob.Task cur = j.current();
+            if (carrying && (cur == null || cur.kind != PhysicalJob.Kind.STORE)) {
+                // fim do turno: guarda o que juntou antes de dormir
+                j.tasks.add(j.cursor, JobPlanner.storeTask(JobPlanner.storagePoint(core, k)));
+                return true;
+            }
+            if (!carrying || cur == null || cur.kind != PhysicalJob.Kind.STORE) {
+                j.status = PhysicalJob.Status.PAUSED;
+                j.reason = "noite: dormindo, volta ao trabalho de manhã";
+                n.heldItem = "";
+                return false;
+            }
+            return true;
+        }
+        if (j.status == PhysicalJob.Status.PAUSED && j.reason.startsWith("noite")) {
+            j.status = PhysicalJob.Status.ACTIVE;
+            j.reason = "";
+            j.addLog(core.tick(), "Amanheceu: de volta ao trabalho.");
+        }
+        // longe de tudo (área descarregada e sem chunk forçado): trabalho simulado, mesmas regras de mochila/ferramenta/comida
+        if (j.site != null && !port().isLoaded(j.site) && (j.current() == null || isWorkTask(j.current()))) {
+            abstractWork(j, n, k);
+            return false;
+        }
+        if (j.current() != null) return true;
+        if (j.quota > 0 && j.produced + produce(j, Kit.surplus(n)) >= j.quota) {
+            j.tasks.add(JobPlanner.storeTask(JobPlanner.storagePoint(core, k)));
+            j.addLog(core.tick(), "Juntou o bastante para a meta: levando ao armazém.");
+            return true;
+        }
+        if (core.tick() < j.nextPlanTick) return false;
+        List<PhysicalJob.Task> next = JobPlanner.nextBatch(core, k, j, n);
+        if (next.isEmpty()) {
+            String why = JobPlanner.idleReason(core, k, j, n);
+            j.nextPlanTick = core.tick() + 20L * 30;
+            waitFor(j, (why.isBlank() ? "nada a fazer no local" : why) + " — tenta de novo em 30 s", -1);
+            return false;
+        }
+        j.tasks.addAll(next);
+        j.status = PhysicalJob.Status.ACTIVE;
+        return true;
+    }
+
+    private static boolean isWorkTask(PhysicalJob.Task t) {
+        return t.kind == PhysicalJob.Kind.BREAK || t.kind == PhysicalJob.Kind.CHOP || t.kind == PhysicalJob.Kind.FARM || t.kind == PhysicalJob.Kind.PLANT;
+    }
+
+    /**
+     * Área descarregada: o súdito segue trabalhando "fora da vista" — rende no ritmo do serviço, gasta a ferramenta,
+     * come da ração e, cheio, leva ao armazém (o estoque do reino recebe). O mundo não muda enquanto ninguém olha (LOD).
+     */
+    private void abstractWork(PhysicalJob j, Npc n, Kingdom k) {
+        meal(j, n, k);
+        j.status = PhysicalJob.Status.ACTIVE;
+        j.reason = "trabalhando longe da vista (simulado)";
+        // tarefas físicas pendentes ficam para quando a área carregar de novo
+        while (j.current() != null && isWorkTask(j.current())) j.tasks.remove(j.cursor);
+        boolean quotaReady = j.quota > 0 && j.produced + produce(j, Kit.surplus(n)) >= j.quota;
+        if (Inventory.full(n) || Inventory.foodCount(n) == 0 && n.hunger < 30 && hasFood(k) || quotaReady) {
+            Pos at = JobPlanner.storagePoint(core, k);
+            Kit.Trip trip = Kit.deposit(k, n);
+            j.produced += produce(j, trip.moved());
+            j.trips++;
+            Kit.resupply(k, n);
+            core.treasury().sync(k);
+            n.pos = j.site;
+            if (!trip.nothing()) j.addLog(core.tick(), "Levou ao armazém (longe da vista): " + summary(trip.moved()) + ".");
+            if (at != null) j.abstractProgress = -Math.min(120, at.distXZ(j.site) / ABSTRACT_WALK_SPEED * 2); // ida e volta
+            return;
+        }
+        String type = switch (j.labor) {
+            case "wood" -> "axe";
+            case "farm" -> "hoe";
+            default -> "pickaxe";
+        };
+        String tool = Inventory.bestTool(n, type);
+        String skill = switch (j.labor) {
+            case "wood" -> "lenhar";
+            case "farm" -> "colher";
+            default -> "minerar";
+        };
+        // segundos por item (com ferramenta de ferro): tora 8 s, pedregulho 3 s, minério 12 s, trigo 6 s
+        double secondsPerItem = switch (j.labor) {
+            case "wood" -> 8;
+            case "stone" -> 3;
+            case "ore" -> 12;
+            default -> 6;
+        };
+        double rate = (tool != null ? Inventory.speedFactor(tool) : 0.25) * (1 + 0.05 * n.skillLevel(skill)) * (n.hunger < 20 ? 0.6 : 1.0);
+        j.abstractProgress += rate / secondsPerItem;
+        while (j.abstractProgress >= 1) {
+            j.abstractProgress -= 1;
+            String item = switch (j.labor) {
+                case "wood" -> "minecraft:oak_log";
+                case "stone" -> "minecraft:cobblestone";
+                case "ore" -> j.oreId.contains("coal") ? "minecraft:coal" : j.oreId.contains("copper") ? "minecraft:raw_copper"
+                        : j.oreId.contains("gold") ? "minecraft:raw_gold" : "minecraft:raw_iron";
+                default -> "minecraft:wheat";
+            };
+            if (!j.labor.equals("wood") && !j.labor.equals("farm") && tool == null) continue; // pedra/minério sem picareta não rende
+            if (Inventory.room(n, item) <= 0) break;
+            n.bag.merge(item, 1, Integer::sum);
+            j.gained.merge(item, 1, Integer::sum);
+            n.skillXp.merge(skill, 1, Integer::sum);
+            if (j.labor.equals("ore") && Inventory.room(n, "minecraft:cobblestone") >= 2) n.bag.merge("minecraft:cobblestone", 2, Integer::sum); // a galeria até o veio
+            if (j.labor.equals("farm")) n.bag.merge("minecraft:wheat_seeds", 1, Integer::sum);
+            if (tool != null && Inventory.wear(n, tool)) {
+                String next = Inventory.bestTool(n, type);
+                j.addLog(core.tick(), ItemNames.display(tool) + " quebrou (longe da vista)" + (next != null ? ": pegou a reserva." : "."));
+                if (next == null && JobPlanner.kingdomHasTool(k, type)) {
+                    Kit.resupply(k, n);
+                    core.treasury().sync(k);
+                }
+                tool = next;
+            }
+        }
     }
 
     // ------------------------------------------------------------------ movimento
@@ -556,7 +921,7 @@ public final class SkillSystem {
         PhysicalJob.Task t = j.current();
         if (t == null) return null;
         Pos target = switch (t.kind) {
-            case BREAK, CHOP -> t.blocks.isEmpty() ? null : t.blocks.get(0);
+            case BREAK, CHOP, FARM -> t.blocks.isEmpty() ? null : t.blocks.get(0);
             case GIVE -> t.at != null ? t.at : core.playerPos(j.orderedBy);
             default -> t.at;
         };
@@ -611,7 +976,7 @@ public final class SkillSystem {
             case BUILDER -> 1.5;
             default -> 1.0;
         };
-        return base * (n.hunger < 20 ? 0.6 : 1.0);
+        return base * (n.hunger < 20 ? 0.6 : 1.0) * com.kingdomsai.core.life.LifeSystem.workFactor(n);
     }
 
     private Pos storageChest(Kingdom k) {
@@ -622,18 +987,21 @@ public final class SkillSystem {
         return c != null ? c : port().findNear(b.centerPos(), "minecraft:barrel", 6);
     }
 
-    private static int bagTotal(Npc n) {
-        return n.bag.values().stream().mapToInt(Integer::intValue).sum();
-    }
 
     private static boolean isTool(String id) {
         return id.matches(".*_(pickaxe|axe|shovel|hoe|sword)");
     }
 
-    private static String held(Npc n, PhysicalJob.Task t) {
+    /** O que ele leva na mão nesta etapa: a ferramenta DE VERDADE da mochila (ou nada). */
+    private String held(Npc n, PhysicalJob.Task t) {
         return switch (t.kind) {
-            case BREAK -> n.profession == Profession.LUMBERJACK ? "axe" : "pickaxe";
-            case CHOP -> "axe";
+            case BREAK -> {
+                String type = t.blocks.isEmpty() ? null : port().block(t.blocks.get(0)).tool();
+                String tool = type == null ? null : Inventory.bestTool(n, type);
+                yield tool == null ? "" : tool;
+            }
+            case CHOP -> Objects.requireNonNullElse(Inventory.bestTool(n, "axe"), "");
+            case FARM -> Objects.requireNonNullElse(Inventory.bestTool(n, "hoe"), n.bag.containsKey("minecraft:wheat_seeds") ? "minecraft:wheat_seeds" : "");
             case CRAFT -> t.item;
             case GIVE -> t.item != null && !t.item.startsWith("#") ? t.item
                     : n.bag.keySet().stream().findFirst().orElse("");

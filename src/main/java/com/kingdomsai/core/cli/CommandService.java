@@ -54,7 +54,7 @@ public final class CommandService {
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
             "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
             "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag", "report", "mark", "marks",
-            "attack", "retreat", "settle", "campaigns", "captives", "purge", "enslave", "free", "confirm", "abort");
+            "attack", "retreat", "settle", "campaigns", "captives", "purge", "enslave", "free", "confirm", "abort", "life", "perf", "roteiro");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -273,12 +273,45 @@ public final class CommandService {
                 }
             }
             case "jobs", "ordens" -> jobs(k, out);
+            case "life", "vida" -> life(k, out);
+            case "roteiro", "guia", "inicio", "opening" -> {
+                if (a.length > 2 && a[1].equalsIgnoreCase("auto")) {
+                    k.openingAuto = a[2].matches("(?i)on|sim|ligado|liga|1|true");
+                    out.add("✓ Conselheiro automático do roteiro " + (k.openingAuto ? "ligado: ele cuida da etapa da vez nos primeiros dias." : "desligado: o roteiro só avisa."));
+                } else if (a.length > 1 && a[1].matches("(?i)agora|fazer|now|go")) {
+                    var step = core.opening().current(k);
+                    if (step == null) out.add("✓ O roteiro de início já foi concluído.");
+                    else {
+                        var lines = core.opening().act(k, step);
+                        out.add("# Conselheiro — " + step.title());
+                        if (lines.isEmpty()) out.add("⚠ Nada que o conselheiro possa fazer sozinho agora. " + step.say() + ".");
+                        else out.addAll(lines);
+                    }
+                } else out.addAll(core.opening().describe(k));
+            }
+            case "perf", "desempenho" -> {
+                double[] p = core.perf();
+                out.add("# Desempenho do Core");
+                out.add("Tick médio " + Text.fmt(p[0]) + " ms · pior tick " + Text.fmt(p[1]) + " ms (orçamento do Minecraft: 50 ms por tick)");
+                out.add("Súditos vivos " + core.allAlive().size() + " · conversas até agora " + core.life().conversations());
+            }
             case "job", "tarefa" -> job(k, player, a, out);
             case "bag", "mochila" -> {
                 Npc n = a.length > 1 ? core.findNpc(k.id, rest(a, 1)) : core.npc(selected(player));
                 if (n == null) out.add("✗ Uso: bag <nome> (ou selecione alguém).");
-                else out.add("Mochila de " + n.name + ": " + com.kingdomsai.core.skill.SkillSystem.summary(n.bag)
-                        + " (" + n.bag.values().stream().mapToInt(Integer::intValue).sum() + "/" + com.kingdomsai.core.skill.JobPlanner.BAG_CAPACITY + ")");
+                else {
+                    out.add("# Mochila de " + n.name + " (" + n.profession.display + ") — " + com.kingdomsai.core.skill.Inventory.slotsUsed(n.bag)
+                            + "/" + com.kingdomsai.core.skill.Inventory.SLOTS + " espaços");
+                    out.add(n.bag.isEmpty() ? "vazia" : com.kingdomsai.core.skill.SkillSystem.summary(n.bag));
+                    out.add("Kit: " + com.kingdomsai.core.skill.Kit.describe(n));
+                    if (!n.gear.isEmpty()) {
+                        List<String> worn = new ArrayList<>();
+                        n.gear.forEach((slot, id) -> worn.add(com.kingdomsai.core.skill.ItemNames.display(id)));
+                        out.add("Vestindo: " + String.join(", ", worn));
+                    }
+                    var lack = com.kingdomsai.core.skill.Kit.missing(n);
+                    if (!lack.isEmpty()) out.add("⚠ Falta para trabalhar: " + String.join(", ", lack.stream().map(com.kingdomsai.core.skill.Kit.Need::label).toList()));
+                }
             }
             case "chains", "cadeias", "rotinas" -> chains(k, out);
             case "chain", "cadeia", "rotina" -> chain(k, player, a, out);
@@ -297,6 +330,12 @@ public final class CommandService {
                 act(k, player, ActionType.ATTACK, out, kv.toArray(String[]::new));
             }
             case "retreat", "recuar", "retirada" -> act(k, player, ActionType.RETREAT, out, "campaign", a.length > 1 ? a[1] : "");
+            case "train", "treinar", "treino" -> {
+                List<String> kv = new ArrayList<>();
+                if (a.length > 1 && a[1].matches("\\d+")) kv.addAll(List.of("amount", a[1]));
+                else if (a.length > 1) kv.addAll(List.of("npc", rest(a, 1)));
+                act(k, player, ActionType.TRAIN, out, kv.toArray(String[]::new));
+            }
             case "settle", "colonizar" -> act(k, player, ActionType.SETTLE, out, "amount", a.length > 1 && a[1].matches("\\d+") ? a[1] : "3",
                     "target", a.length > 2 ? rest(a, 2) : a.length > 1 && !a[1].matches("\\d+") ? rest(a, 1) : "aqui");
             case "campaigns", "campanhas", "tropas" -> campaigns(k, out);
@@ -355,7 +394,7 @@ public final class CommandService {
         out.add("build <planta> [qtd] [para <nome>] [prazo 5m|1d] · build custom tipo=casa largura=9 andares=2 parede=pedra");
         out.add("projects · deadline <nº> <tempo> · cancel <nº> · blueprints · blueprint design|show|delete|materials");
         out.add("army · army recruit [n] (sem n o general decide) · army release <n> [profissão] — exército não custa ouro, custa comida");
-        out.add("attack <reino|aqui|x z> [n] · retreat [nº] · campaigns · settle [n] (colonos para onde você está)");
+        out.add("attack <reino|aqui|x z> [n] · retreat [nº] · campaigns · settle [n] (colonos para onde você está) · train [n | instrutor]");
         out.add("captives · enslave <cativos|nome> [profissão] · free <escravos|cativos|nome|todos> [casa] · purge <vila|cativos|nome>");
         out.add("confirm / abort — confirma ou desiste da ordem irreversível que está esperando (também: \"confirmo\"/\"desisto\" no chat)");
         out.add("economy · territory · claim [n] · tax <0-4|up|down> · law <conscription|migration> <on|off>");
@@ -368,6 +407,8 @@ public final class CommandService {
         out.add("job <nome> take <qtd> <item> [armazem] · put [qtd item] · craft <qtd> <item> [entregar] · give · job cancel <nº> · jobs · bag <nome>");
         out.add("mark <spawn|praca|mina|bosque> [x y z] · marks — pontos do reino (ou use a Bandeira do Reino: /k bandeira)");
         out.add("report — o que aconteceu enquanto você esteve fora (as ordens continuam mesmo longe)");
+        out.add("roteiro [agora | auto on|off] — roteiro de início: comida, armazém, casas, material, guarda, vida (o conselheiro ajuda)");
+        out.add("life — a vida da vila: humor, casais, amizades, brigas, boatos, conversas recentes · perf — desempenho do Core");
         out.add("call [nome] · follow [nome] [minutos] · dismiss [nome] — chama até onde você está (no Manager: tecla G)");
         out.add("village — tamanho da vila · build muralha [height=4] — muro sob medida ao redor da vila");
         out.add("order <texto livre> · ai explain · ai ask <pergunta> · ai status");
@@ -576,6 +617,9 @@ public final class CommandService {
         }
         if (rivals > 0) out.add("⚠ " + rivals + " reino(s) vizinho(s) já existem nesta região. Eles têm seus próprios planos.");
         out.add("Pressione M para abrir o Manager, ou /k help. Seus construtores já começaram o Salão Real.");
+        com.kingdomsai.core.ai.Opening.Step first = core.opening().current(k);
+        out.add("Roteiro de início (/k roteiro): primeiro a COMIDA — sem fazenda a comida acaba em ~15 min. O conselheiro já vai cuidar disso"
+                + (first == null ? "." : "; depois: armazém, casas, madeira e pedra, guarda e vida na vila.") + " Ninguém morre de fome nos 2 primeiros dias.");
     }
 
     public int spawnRivals(Kingdom near, int n) {
@@ -681,8 +725,22 @@ public final class CommandService {
         Kingdom k = core.kingdom(n.kingdomId);
         out.add("# " + n.displayName() + (k != null ? " — " + k.name : ""));
         out.add(n.personalitySummary());
-        out.add("Nível de IA: " + n.level + " · Lealdade " + n.loyalty + " · Fama " + n.fame + " · Fome " + (int) n.hunger + " · Energia " + (int) n.energy);
+        out.add("Nível de IA: " + n.level + " · Lealdade " + n.loyalty + " · Fama " + n.fame);
+        out.add("Humor " + (int) n.mood + " (" + com.kingdomsai.core.life.LifeSystem.moodWord(n) + ") · Fome " + (int) n.hunger + " · Energia " + (int) n.energy
+                + " · Companhia " + (int) n.social + " · Saúde " + (int) n.health + (n.fear > 10 ? " · Medo " + (int) n.fear : ""));
         out.add("Agora: " + n.activity.display + (n.currentTask.isBlank() ? "" : " — " + n.currentTask));
+        if (n.intention != null && n.intention.active(core.tick()))
+            out.add("Decidiu: " + n.intention.describe() + " [" + n.intention.source + "]");
+        if (!n.goal.isBlank()) out.add("Objetivo pessoal: " + n.goal);
+        Npc partner = n.partnerId == null ? null : core.npc(n.partnerId);
+        if (partner != null) out.add("Par: " + partner.name);
+        long t = core.world().dayTime();
+        out.add("Dia: acorda ~" + hour(com.kingdomsai.core.life.LifeSystem.wake(n)) + " · dorme ~" + hour(com.kingdomsai.core.life.LifeSystem.bedtime(n))
+                + (core.life().nightShift(n) ? " (turno da noite)" : "") + (core.life().asleep(n, t) ? " · dormindo agora" : ""));
+        if (!n.recentTalk.isEmpty()) {
+            out.add("Conversas recentes:");
+            for (int i = Math.max(0, n.recentTalk.size() - 3); i < n.recentTalk.size(); i++) out.add("  « " + n.recentTalk.get(i));
+        }
         Building home = n.homeId == null ? null : core.state().buildings.get(n.homeId);
         out.add("Casa: " + (home == null ? "sem casa" : home.blueprint().displayName() + " em " + home.origin.x() + ", " + home.origin.z()));
         StringBuilder rel = new StringBuilder("Relações: ");
@@ -697,6 +755,66 @@ public final class CommandService {
             n.memories.stream().sorted(Comparator.comparingInt(m -> -m.importance())).limit(4)
                     .forEach(m -> out.add("  · " + m.text() + " [" + m.importance() + "]"));
         }
+    }
+
+    private static String hour(long ticks) {
+        long h = (Math.floorMod(ticks, 24000L) / 1000 + 6) % 24, m = Math.floorMod(ticks, 1000L) * 60 / 1000;
+        return h + "h" + (m < 10 ? "0" : "") + m;
+    }
+
+    /** A vida da vila: humor, casais, amigos, rivais, boatos e o que andam conversando. */
+    private void life(Kingdom k, List<String> out) {
+        List<Npc> cs = core.citizens(k.id);
+        out.add("# Vida em " + k.name);
+        if (cs.isEmpty()) {
+            out.add("Ninguém mora aqui.");
+            return;
+        }
+        double avg = cs.stream().mapToDouble(n -> n.mood).average().orElse(0);
+        Npc happy = cs.stream().max(Comparator.comparingDouble(n -> n.mood)).orElseThrow();
+        Npc sad = cs.stream().min(Comparator.comparingDouble(n -> n.mood)).orElseThrow();
+        out.add("Humor médio " + (int) avg + " · mais feliz: " + happy.name + " (" + (int) happy.mood + ") · mais triste: " + sad.name + " (" + (int) sad.mood
+                + (sad.mood < 35 ? ", " + sadReason(sad) : "") + ")");
+        Set<UUID> seen = new HashSet<>();
+        List<String> couples = new ArrayList<>();
+        int friends = 0, rivals = 0;
+        for (Npc n : cs) {
+            if (n.partnerId != null && seen.add(n.id) && seen.add(n.partnerId)) {
+                Npc p = core.npc(n.partnerId);
+                if (p != null) couples.add(n.name + " & " + p.name);
+            }
+            for (var e : n.relations.entrySet()) {
+                if (core.npc(e.getKey()) == null) continue;
+                if (e.getValue().affection > 60) friends++;
+                if (e.getValue().rivalry > 60) rivals++;
+            }
+        }
+        out.add("Casais: " + (couples.isEmpty() ? "nenhum" : String.join(", ", couples)) + " · laços de amizade " + friends / 2 + " · rivalidades " + rivals);
+        long rumors = cs.stream().flatMap(n -> n.memories.stream()).filter(m -> m.tags().contains("boato")).count();
+        out.add("Conversas " + core.life().conversations() + " · boatos passados adiante " + core.life().rumorsPassed() + " (" + rumors + " na memória) · brigas "
+                + core.life().arguments());
+        Map<String, Long> doing = new TreeMap<>();
+        for (Npc n : cs) doing.merge(n.activity.display, 1L, Long::sum);
+        List<String> d = new ArrayList<>();
+        doing.forEach((act, c) -> d.add(c + " " + act));
+        out.add("Agora: " + String.join(", ", d));
+        var alerts = core.life().alerts().stream().filter(a -> a.kingdomId().equals(k.id)).toList();
+        if (!alerts.isEmpty()) out.add("⚠ Pedidos de socorro recentes: " + alerts.size() + " (último: " + alerts.get(alerts.size() - 1).what() + ")");
+        var lines = core.life().recentLines(40).stream().filter(l -> k.id.equals(l.kingdomId())).toList();
+        if (!lines.isEmpty()) {
+            out.add("Ouvido pela vila:");
+            for (int i = Math.max(0, lines.size() - 6); i < lines.size(); i++) out.add("  " + lines.get(i).format());
+        }
+    }
+
+    private String sadReason(Npc n) {
+        if (n.health < 40) return "ferido";
+        if (n.hunger < 25) return "com fome";
+        if (!n.isFree()) return "sem liberdade";
+        if (n.homeId == null) return "sem casa";
+        if (n.memories.stream().anyMatch(m -> m.tags().contains("luto") && core.tick() - m.tick() < 48000)) return "de luto";
+        if (n.social < 20) return "sozinho";
+        return "cansado da vida";
     }
 
     private void talk(UUID player, String playerName, Npc n, String text, List<String> out) {
@@ -990,6 +1108,8 @@ public final class CommandService {
                     Blueprint bp = core.registerSpec(spec);
                     out.add("✓ Planta criada: " + bp.id() + " — " + bp.displayName() + " · " + bp.sizeX() + "x" + bp.sizeZ() + "x" + bp.sizeY()
                             + " · custo " + costText(bp.cost()) + (bp.housing() > 0 ? " · abriga " + bp.housing() : ""));
+                    var adj = com.kingdomsai.core.construction.ParametricBlueprints.adjustments(p, spec);
+                    if (!adj.isEmpty()) out.add("⚠ Ajustei: " + String.join("; ", adj) + ".");
                     out.add("Construir: /k build " + bp.id() + " [prazo 1d]");
                 } catch (IllegalArgumentException e) {
                     out.add("✗ [invalid_param] " + e.getMessage());

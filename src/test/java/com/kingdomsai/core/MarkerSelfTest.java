@@ -70,12 +70,15 @@ public final class MarkerSelfTest {
         for (int i = 0; i < 6; i++) core.construction().planAt(k, com.kingdomsai.core.construction.BlueprintLibrary.get("house_medium"),
                 new Pos(40 + i * 12, 64, 40), true).status = com.kingdomsai.core.construction.Building.Status.COMPLETE;
         int before = core.population(k.id);
-        for (int i = 0; i < 20 * 60 * 6 && core.population(k.id) == before; i++) core.step();
+        for (int i = 0; i < 20 * 60 * 6 && core.population(k.id) <= before; i++) core.step(); // espera um morador NOVO (alguém pode ter ido embora)
         Npc newcomer = core.citizens(k.id).stream().max(Comparator.comparingLong(n -> n.bornTick)).orElseThrow();
         check("novo morador chega no spawn marcado", core.population(k.id) > before && newcomer.pos.distXZ(new Pos(12, 64, -8)) <= 6);
         cli.execute(player, "Andraus", new Pos(0, 64, 0), "mark praca 20 64 20");
         Npc farmer = core.citizens(k.id).stream().filter(n -> n.profession == Profession.FARMER).findFirst().orElseThrow();
-        check("fim de tarde: súditos vão para a praça marcada", core.scheduler().decide(farmer, 11500).target().distXZ(new Pos(20, 64, 20)) <= 8);
+        farmer.intention = new com.kingdomsai.core.life.Intention(); // sem plano próprio para a tarde: vai para a praça
+        farmer.talkingWith = null;
+        check("fim de tarde: súditos vão para a praça marcada", core.scheduler().decide(farmer, 11500).target().distXZ(new Pos(20, 64, 20)) <= 8
+                && com.kingdomsai.core.life.Places.plaza(k, farmer).distXZ(new Pos(20, 64, 20)) <= 8);
         Npc miner = core.citizens(k.id).stream().filter(n -> n.profession == Profession.MINER).findFirst().orElseThrow();
         check("minerador vai trabalhar na mina marcada", core.scheduler().decide(miner, 6000).target().distXZ(new Pos(7, 64, 7)) <= 6);
         check("cadeias usam a mina marcada", core.work().natureSpot(k, 0).equals(new Pos(7, 64, 7)));

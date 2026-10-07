@@ -102,6 +102,31 @@ public final class LlmGateway {
         return lastResponse;
     }
 
+    /** Há um modelo de verdade respondendo agora (não as regras)? */
+    public boolean live() {
+        return config.enabled && provider != mock && System.currentTimeMillis() >= downUntil;
+    }
+
+    /**
+     * Chamada de fundo (vida dos súditos: agenda, conversa entre eles). Não cai para as regras do rei e respeita o limite
+     * global deixando folga para as falas do rei. Devolve null se não deu (quem chama usa as próprias regras).
+     */
+    public CompletableFuture<Plan> background(LlmRequest req) {
+        if (!live()) return CompletableFuture.completedFuture(null);
+        long now = System.currentTimeMillis();
+        while (!calls.isEmpty() && now - calls.peekFirst() > 60_000) calls.pollFirst();
+        if (calls.size() >= Math.max(1, config.maxCallsPerMinute - 5)) return CompletableFuture.completedFuture(null);
+        calls.addLast(now);
+        return provider.complete(req, config).orTimeout(config.effectiveTimeoutMs() + 500L, TimeUnit.MILLISECONDS).handle((raw, err) -> {
+            if (err != null) return null;
+            try {
+                return Plan.parse(raw);
+            } catch (RuntimeException e) {
+                return null;
+            }
+        });
+    }
+
     public CompletableFuture<Result> submit(LlmRequest req) {
         if (!config.enabled || provider == mock) return CompletableFuture.completedFuture(new Result(mock.interpret(req), mock.name(), false, ""));
         long now = System.currentTimeMillis();

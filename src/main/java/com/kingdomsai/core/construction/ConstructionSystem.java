@@ -155,6 +155,23 @@ public final class ConstructionSystem {
         b.builderId = b.builderIds.isEmpty() ? null : b.builderIds.get(0);
     }
 
+    /** O construtor com menos obras (para o conselho delegar). */
+    public Npc leastBusyBuilder(UUID kingdomId) {
+        Npc best = null;
+        int bestLoad = Integer.MAX_VALUE;
+        for (Npc n : core.citizens(kingdomId)) {
+            if (n.profession != Profession.BUILDER || !n.isFree()) continue;
+            int load = 0;
+            for (Building o : core.state().buildings.values())
+                if (o.status == Building.Status.UNDER_CONSTRUCTION && o.hasBuilder(n.id)) load++;
+            if (load < bestLoad) {
+                bestLoad = load;
+                best = n;
+            }
+        }
+        return best;
+    }
+
     private static boolean isBuilder(Npc n, UUID kingdom) {
         return n != null && n.alive && n.profession == Profession.BUILDER && kingdom.equals(n.kingdomId);
     }
@@ -227,7 +244,13 @@ public final class ConstructionSystem {
 
     public String formatEta(Building b) {
         double eta = etaSeconds(b);
-        return eta < 0 ? "parada (sem construtor)" : formatDuration(eta);
+        if (eta >= 0) return formatDuration(eta);
+        if (!b.builderIds.isEmpty()) {
+            Npc n = core.npc(b.builderIds.get(0));
+            Building cur = n == null ? null : currentProjectOf(n);
+            if (n != null && cur != null && cur != b) return "na fila de " + n.name + " (termina «" + cur.blueprint().displayName() + "» antes)";
+        }
+        return "parada (sem construtor)";
     }
 
     public static String formatDuration(double seconds) {

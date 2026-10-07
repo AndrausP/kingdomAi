@@ -63,7 +63,7 @@ public final class CliSelfTest {
                 {"blueprint materials", "Materiais"},
                 {"blueprint design nome=Casa_do_Ferreiro tipo=casa largura=9 profundidade=7 andares=2 parede=pedra telhado=duas_aguas chamine=sim", "✓ Planta criada"},
                 {"blueprint show custom_casa_do_ferreiro", "# Casa do Ferreiro"},
-                {"blueprint design tipo=casa largura=40", "✗"},
+                {"blueprint design tipo=casa largura=40", "✓"}, // fora da faixa: ajusta para 21 e avisa (não recusa)
                 {"blueprint design tipo=torre parede=madeira_magica", "✗"},
                 {"build casa", "✓"},
                 {"build casa 2 prazo 10m", "✓"},

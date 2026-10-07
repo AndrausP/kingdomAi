@@ -209,10 +209,30 @@ public final class CoreSelfTest {
         passed += mi[0];
         failed += mi[1];
 
-        // 17. Claude Code como IA (processo falso e script)
+        // 17. Ordens visíveis, plantas sob medida, tesouro nos baús, coleta, hierarquia
+        int[] od = OrdersSelfTest.run();
+        passed += od[0];
+        failed += od[1];
+
+        // 18. Claude Code como IA (processo falso e script)
         int[] cc = ClaudeCodeSelfTest.run();
         passed += cc[0];
         failed += cc[1];
+
+        // 19. Mochila e kit por ofício; trabalho contínuo (lenhador, mineiro, fazendeiro), longe da vista e validações
+        int[] lb = LaborSelfTest.run();
+        passed += lb[0];
+        failed += lb[1];
+
+        // 20. Vida dos súditos: horário, refeições, humor, conversas, boatos, casais, reflexos, agenda pela IA, desempenho
+        int[] lf = LifeSelfTest.run();
+        passed += lf[0];
+        failed += lf[1];
+
+        // 21. Roteiro de início: o reino novo não perde no começo (comida primeiro)
+        int[] op = OpeningSelfTest.run();
+        passed += op[0];
+        failed += op[1];
 
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);

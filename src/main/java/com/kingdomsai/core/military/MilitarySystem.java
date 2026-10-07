@@ -76,18 +76,25 @@ public final class MilitarySystem {
     public List<Npc> available(Kingdom k, boolean withGuards) {
         List<Npc> out = new ArrayList<>();
         for (Npc n : core.citizens(k.id)) {
-            if (!n.isFree() || n.campaignId != null || n.office == Office.KING) continue;
+            if (!n.isFree() || atWar(n) || n.office == Office.KING) continue;
             if (n.profession == Profession.SOLDIER || withGuards && n.profession == Profession.GUARD) out.add(n);
         }
         out.sort(Comparator.comparingDouble((Npc n) -> -power(n, k)));
         return out;
     }
 
-    /** Força de combate de uma pessoa. */
+    /** Está numa campanha de guerra (ataque/colonização) — treino e deslocamento não contam. */
+    public boolean atWar(Npc n) {
+        if (n.campaignId == null) return false;
+        Campaign c = core.state().campaigns.get(n.campaignId);
+        return c != null && c.live() && c.war();
+    }
+
+    /** Força de combate de uma pessoa: espada do arsenal vale +30%; treino aparece em disciplina e coragem. */
     public double power(Npc n, Kingdom k) {
         double p = n.profession == Profession.SOLDIER ? 1.0 : n.profession == Profession.GUARD ? 0.8 : 0.25;
         p *= 0.75 + n.trait(Trait.COURAGE) / 400.0 + n.trait(Trait.DISCIPLINE) / 400.0;
-        if (k.get(ResourceType.WEAPONS) >= 1 && n.profession.isMilitary()) p *= 1.3;
+        if (!n.equipped.isEmpty() && n.profession.isMilitary()) p *= 1.3;
         p *= 0.7 + k.morale / 333.0;
         if (n.hunger < 20) p *= 0.6;
         return p;
@@ -100,7 +107,7 @@ public final class MilitarySystem {
         double d = 0;
         int civilians = 0;
         for (Npc n : core.citizens(owner.id)) {
-            if (n.campaignId != null || !n.isFree()) continue;
+            if (atWar(n) || !n.isFree()) continue;
             if (n.profession.isMilitary()) d += power(n, owner);
             else civilians++;
         }
@@ -188,6 +195,7 @@ public final class MilitarySystem {
         c.startTick = core.tick();
         c.arriveTick = core.tick() + 20L * travelSeconds(c.origin, target);
         for (Npc n : people) {
+            leaveDrill(n);
             c.members.add(n.id);
             n.campaignId = c.id;
             n.jobId = null;
@@ -239,6 +247,10 @@ public final class MilitarySystem {
                 continue;
             }
             long now = core.tick();
+            if (!c.war()) {
+                drillTick(c, k, troops, now);
+                continue;
+            }
             switch (c.status) {
                 case MARCHING -> {
                     if (now >= c.arriveTick) arrive(c, k, troops);
@@ -270,7 +282,10 @@ public final class MilitarySystem {
         c.log(why);
         for (UUID id : c.members) {
             Npc n = core.npc(id);
-            if (n != null && c.id.equals(n.campaignId)) n.campaignId = null;
+            if (n != null && c.id.equals(n.campaignId)) {
+                n.campaignId = null;
+                if (n.heldItem.equals("minecraft:white_banner")) n.heldItem = "";
+            }
         }
         core.bus().publish(core.tick(), EventType.CAMPAIGN_ENDED, st == Campaign.Status.DONE ? GameEvent.Severity.GOOD : GameEvent.Severity.WARN,
                 c.kingdomId, null, (c.kind == Campaign.Kind.ATTACK ? "Tropa #" : "Colonos #") + c.number + ": " + why
@@ -309,7 +324,7 @@ public final class MilitarySystem {
         double near = nearFactor(owner, c.target);
         List<Npc> defenders = new ArrayList<>();
         for (Npc n : core.citizens(owner.id))
-            if (n.isFree() && n.campaignId == null && n.profession.isMilitary()) defenders.add(n);
+            if (n.isFree() && !atWar(n) && n.profession.isMilitary()) defenders.add(n);
         double def = defenseAt(owner, c.target) * (0.85 + rng.nextDouble() * 0.3);
         double ratio = att + def <= 0 ? 1 : att / (att + def);
         boolean win = ratio > 0.5;
@@ -367,7 +382,7 @@ public final class MilitarySystem {
     /** A vila caiu: os civis viram cativos (ou morrem, se o rei ordenou "sem piedade"); o resto da terra passa ao vencedor. */
     private void conquer(Campaign c, Kingdom k, Kingdom owner) {
         List<Npc> people = new ArrayList<>();
-        for (Npc n : core.citizens(owner.id)) if (n.campaignId == null) people.add(n);
+        for (Npc n : core.citizens(owner.id)) if (!atWar(n)) people.add(n);
         if (c.noQuarter) {
             for (Npc n : people) die(n, "morreu no saque de " + owner.name + " (sem piedade)");
             c.kills += people.size();
@@ -377,6 +392,8 @@ public final class MilitarySystem {
                 n.originKingdomId = owner.id;
                 n.kingdomId = k.id;
                 n.freedom = Freedom.CAPTIVE;
+                if (!n.equipped.isEmpty()) k.add(ResourceType.WEAPONS, 1); // a espada do vencido vai para o arsenal
+                n.equipped = "";
                 n.office = Office.NONE;
                 n.campaignId = null;
                 n.dutyChainId = null;
@@ -459,6 +476,14 @@ public final class MilitarySystem {
                 n.campaignId = null;
                 return null;
             }
+            if (!c.war()) {
+                if (n.jobId != null) { // ordem com as mãos dada no meio do treino: ela vale mais
+                    leaveDrill(n);
+                    return null;
+                }
+                return drillIntent(c, n);
+            }
+            n.heldItem = n.id.equals(c.commanderId) ? "minecraft:white_banner" : "";
             int h = Math.abs(n.id.hashCode());
             Pos spot = c.target.offset(h % 7 - 3, 0, h / 7 % 7 - 3);
             return switch (c.status) {
@@ -485,6 +510,128 @@ public final class MilitarySystem {
             return new NpcScheduler.Intent(NpcActivity.IMPRISONED, k.center.offset(-6 + h % 3, 0, 6 + h / 3 % 3), 1);
         }
         return null;
+    }
+
+    // ================================================================== treino e deslocamento (ordens que se VÊEM)
+
+    /** Treino ou "vão para tal lugar": o líder vai na frente, os outros em fileiras de 4; ficam {@code seconds} lá. */
+    public Campaign assemble(Kingdom k, Campaign.Kind kind, Npc leader, List<Npc> people, Pos target, int seconds, String order) {
+        Campaign c = new Campaign();
+        c.id = UUID.randomUUID();
+        c.number = ++core.state().campaignCounter;
+        c.kingdomId = k.id;
+        c.kind = kind;
+        c.target = target;
+        c.origin = leader != null && leader.pos != null ? leader.pos : k.center;
+        c.commanderId = leader == null ? null : leader.id;
+        c.order = order == null ? "" : Text.truncate(order, 120);
+        c.holdSeconds = Math.max(10, Math.min(20 * 60, seconds));
+        c.startTick = core.tick();
+        List<Npc> all = new ArrayList<>();
+        if (leader != null) all.add(leader);
+        for (Npc n : people) if (!all.contains(n)) all.add(n);
+        int farthest = 0;
+        for (Npc n : all) {
+            leaveDrill(n);
+            c.members.add(n.id);
+            n.campaignId = c.id;
+            core.scheduler().dismiss(n);
+            if (n.pos != null) farthest = Math.max(farthest, (int) n.pos.distXZ(target));
+        }
+        c.arriveTick = core.tick() + 20L * Math.max(3, Math.round(farthest / MARCH_BLOCKS_PER_SECOND));
+        core.state().campaigns.put(c.id, c);
+        c.log((kind == Campaign.Kind.TRAIN ? "Treino" : "Deslocamento") + ": " + names(all) + " → (" + target.x() + ", " + target.z() + ").");
+        core.bus().publish(core.tick(), EventType.CAMPAIGN_STARTED, GameEvent.Severity.INFO, k.id, leader == null ? null : leader.id,
+                (kind == Campaign.Kind.TRAIN ? "Treino #" : "Grupo #") + c.number + ": " + names(all) + " a caminho de (" + target.x() + ", " + target.z() + ").",
+                Map.of("campaign", c.id.toString()));
+        return c;
+    }
+
+    /** Sai de um treino/deslocamento (outra ordem chegou). Guerra não se larga assim. */
+    public void leaveDrill(Npc n) {
+        if (n.campaignId == null) return;
+        Campaign c = core.state().campaigns.get(n.campaignId);
+        if (c == null || !c.live()) {
+            n.campaignId = null;
+            return;
+        }
+        if (c.war()) return;
+        c.members.remove(n.id);
+        n.campaignId = null;
+        if (n.heldItem.equals("minecraft:white_banner")) n.heldItem = "";
+    }
+
+    private void drillTick(Campaign c, Kingdom k, List<Npc> people, long now) {
+        if (c.status == Campaign.Status.MARCHING && now >= c.arriveTick) {
+            c.status = Campaign.Status.HOLDING;
+            c.holdUntil = now + 20L * c.holdSeconds;
+            for (Npc n : people) if (!n.materialized) n.pos = spot(c, n, false);
+            c.log("Chegaram: " + names(people) + ".");
+        } else if (c.status == Campaign.Status.HOLDING) {
+            long held = (now - (c.holdUntil - 20L * c.holdSeconds)) / 20;
+            if (c.kind == Campaign.Kind.TRAIN && held > 0 && held % 30 == 0) {
+                for (Npc n : people) {
+                    if (n.id.equals(c.commanderId)) continue;
+                    n.traits.merge(Trait.DISCIPLINE, 1, (a, b) -> Math.min(95, a + b));
+                    if (held % 60 == 0) n.traits.merge(Trait.COURAGE, 1, (a, b) -> Math.min(95, a + b));
+                }
+                c.kills++; // contador de rodadas de treino
+            }
+            if (now >= c.holdUntil) {
+                Npc lead = core.npc(c.commanderId);
+                if (c.kind == Campaign.Kind.TRAIN) {
+                    if (lead != null) lead.fame += 1;
+                    for (Npc n : people)
+                        if (!n.id.equals(c.commanderId))
+                            n.remember(core.tick(), "Treinei com " + (lead == null ? "a tropa" : lead.name) + ".", 40, lead == null ? null : lead.id, "treino");
+                    c.result = "✓ Treino concluído: " + c.kills + " rodada(s), disciplina +" + c.kills + (c.kills >= 2 ? ", coragem +" + c.kills / 2 : "") + ".";
+                } else c.result = "✓ Cumprido.";
+                end(c, Campaign.Status.DONE, c.kind == Campaign.Kind.TRAIN ? "Treino encerrado." : "Dispensados do lugar combinado.");
+            }
+        }
+    }
+
+    private NpcScheduler.Intent drillIntent(Campaign c, Npc n) {
+        boolean leader = n.id.equals(c.commanderId);
+        boolean training = c.kind == Campaign.Kind.TRAIN && c.status == Campaign.Status.HOLDING;
+        Pos at = spot(c, n, training);
+        Npc lead = core.npc(c.commanderId);
+        n.heldItem = leader && c.kind == Campaign.Kind.TRAIN ? "minecraft:white_banner" : "";
+        if (c.status == Campaign.Status.MARCHING) {
+            n.currentTask = c.kind == Campaign.Kind.TRAIN ? (leader ? "Levando a tropa para treinar" : "Indo treinar com " + (lead == null ? "a tropa" : lead.name))
+                    : "Indo para (" + c.target.x() + ", " + c.target.z() + ") — ordem do rei";
+            return new NpcScheduler.Intent(NpcActivity.MARCH, at, 1);
+        }
+        if (training) {
+            n.currentTask = leader ? "Instruindo a tropa" : "Treinando com " + (lead == null ? "a tropa" : lead.name);
+            return new NpcScheduler.Intent(NpcActivity.TRAIN, at, 0.5);
+        }
+        n.currentTask = "Esperando no lugar combinado (" + Math.max(0, (c.holdUntil - core.tick()) / 20) + " s)";
+        return new NpcScheduler.Intent(NpcActivity.GUARD, at, 1);
+    }
+
+    /** Formação: o líder no ponto; os outros em fileiras de 4, 3 blocos à frente. No treino, a fileira avança e recua a cada 10 s. */
+    private Pos spot(Campaign c, Npc n, boolean drilling) {
+        if (n.id.equals(c.commanderId)) return c.target;
+        int i = 0;
+        for (UUID id : c.members) {
+            if (id.equals(n.id)) break;
+            if (!id.equals(c.commanderId)) i++;
+        }
+        int row = i / 4, col = i % 4;
+        int step = drilling && (core.tick() / 200) % 2 == 1 ? 2 : 0;
+        return c.target.offset((col - 2) * 2 + 1, 0, 3 + row * 2 + step);
+    }
+
+    /** Arsenal: militares sem espada pegam uma do estoque do reino (as do ferreiro). */
+    public void armFromArsenal(Kingdom k) {
+        for (Npc n : core.citizens(k.id)) {
+            if (k.get(ResourceType.WEAPONS) < 1) return;
+            if (n.profession.isMilitary() && n.isFree() && n.equipped.isEmpty()) {
+                k.add(ResourceType.WEAPONS, -1);
+                n.equipped = "iron_sword";
+            }
+        }
     }
 
     // ================================================================== ordens extremas
@@ -525,7 +672,7 @@ public final class MilitarySystem {
             for (Npc n : core.citizens(k.id)) {
                 if (n.office == Office.KING) continue;
                 if (captives && n.freedom == Freedom.CAPTIVE || slaves && n.freedom == Freedom.ENSLAVED
-                        || village && !n.profession.isMilitary() && n.campaignId == null) out.add(n);
+                        || village && !n.profession.isMilitary() && !atWar(n)) out.add(n);
             }
             return out;
         }
@@ -706,6 +853,7 @@ public final class MilitarySystem {
         Random rng = core.rng();
         for (Kingdom k : core.state().kingdoms.values()) {
             k.infamy = Text.clamp(k.infamy - 0.3, 0, 100);
+            armFromArsenal(k);
             List<Npc> held = new ArrayList<>();
             for (Npc n : core.citizens(k.id)) if (!n.isFree()) held.add(n);
             if (!held.isEmpty()) {
@@ -776,7 +924,7 @@ public final class MilitarySystem {
         StringBuilder sb = new StringBuilder();
         long live = campaigns(k.id).stream().filter(Campaign::live).count();
         sb.append("Militares ").append(core.military(k.id)).append(" (em campanha: ")
-                .append(core.citizens(k.id).stream().filter(n -> n.campaignId != null).count()).append(")");
+                .append(core.citizens(k.id).stream().filter(this::atWar).count()).append(")");
         if (live > 0) sb.append(" · tropas fora: ").append(live);
         int cap = captiveCount(k), sl = enslavedCount(k);
         if (cap > 0) sb.append(" · cativos ").append(cap);

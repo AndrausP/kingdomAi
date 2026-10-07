@@ -56,6 +56,7 @@ public final class PersistenceSelfTest {
         cli.setNotifier((p, lines) -> async.addAll(lines));
         cli.execute(player, "Andraus", new Pos(0, 64, 0), "found Reino de Teste");
         Kingdom k = core.kingdomOfPlayer(player);
+        k.openingAuto = false; // o roteiro de início tem o próprio teste (aqui ele gastaria a madeira medida)
         Npc miner = prof(k, Profession.MINER), smith = prof(k, Profession.BLACKSMITH), lumber = prof(k, Profession.LUMBERJACK);
         Building storage = complete(k, "storage", new Pos(-30, 64, 10));
         Pos stChest = storage.centerPos().offset(0, 0, -1);

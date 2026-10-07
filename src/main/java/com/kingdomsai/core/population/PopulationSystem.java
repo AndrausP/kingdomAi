@@ -56,7 +56,7 @@ public final class PopulationSystem {
                 core.bus().publish(core.tick(), EventType.STABILITY_LOW, GameEvent.Severity.DANGER, k.id, null,
                         "A estabilidade de " + k.name + " está perigosamente baixa (" + (int) k.stability + ").");
             for (Npc n : core.citizens(k.id)) {
-                double lt = 35 + n.trait(Trait.LOYALTY) * 0.35 + (k.stability - 50) * 0.4 - (k.laws.taxLevel - 2) * 5;
+                double lt = 35 + n.trait(Trait.LOYALTY) * 0.35 + (k.stability - 50) * 0.4 - (k.laws.taxLevel - 2) * 5 + (n.mood - 60) * 0.2;
                 n.loyalty = Text.clamp((int) Math.round(n.loyalty + (lt - n.loyalty) * 0.05), 0, 100);
             }
         }

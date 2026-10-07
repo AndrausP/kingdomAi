@@ -28,7 +28,8 @@ public final class ChunkKeeper {
         starved.clear();
         if (core.config().keepOrderChunksLoaded) {
             List<PhysicalJob> live = new ArrayList<>();
-            for (PhysicalJob j : core.state().jobs.values()) if (j.status.live()) live.add(j);
+            // trabalho contínuo (lenhador/mina/fazenda) não segura chunk: longe do rei ele é simulado (LOD)
+            for (PhysicalJob j : core.state().jobs.values()) if (j.status.live() && !j.continuous) live.add(j);
             live.sort(Comparator.comparingInt(j -> j.number)); // quem pediu primeiro tem prioridade
             for (PhysicalJob j : live) {
                 Set<String> need = chunksFor(j);

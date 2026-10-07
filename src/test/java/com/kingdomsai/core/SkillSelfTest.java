@@ -103,8 +103,17 @@ public final class SkillSelfTest {
         check("longe do rei (>64) é recusado", !r.ok() && r.message().contains("onde o rei pode ver"));
         r = jobAction(k, "npc", farmer.name, "kind", "break", "x", "6", "y", "50", "z", "6");
         print(r);
-        check("sem picareta: avisa que pedra não rende", r.ok() && r.message().contains("não tem picareta"));
+        check("sem picareta: passa no armazém e pega a do reino", r.ok() && r.message().contains("passar no armazém: picareta"));
         core.skills().cancel(job(farmer), "teste");
+        Map<String, Integer> goods = new TreeMap<>(k.goods);
+        k.goods.keySet().removeIf(id -> id.endsWith("_pickaxe"));
+        r = jobAction(k, "npc", farmer.name, "kind", "break", "x", "6", "y", "50", "z", "6");
+        print(r);
+        check("sem picareta nem no armazém: avisa que pedra não rende", r.ok() && r.message().contains("não tem picareta")
+                && r.message().contains("não render") && !r.message().contains("passar no armazém: picareta"));
+        core.skills().cancel(job(farmer), "teste");
+        k.goods.clear();
+        k.goods.putAll(goods);
 
         // --- 2. árvore: corta tronco e folhas, replanta a muda
         world.tree(new Pos(20, 64, -20));
@@ -168,15 +177,19 @@ public final class SkillSelfTest {
         Building storage = core.construction().planAt(k, BlueprintLibrary.get("storage"), new Pos(-30, 64, 10), true);
         storage.status = Building.Status.COMPLETE;
         storage.placed = storage.progress = storage.blueprint().blockCount();
-        Pos stChest = storage.centerPos().offset(0, 0, -1);
-        world.set(stChest, "minecraft:chest");
-        world.chests.put(stChest, new TreeMap<>());
+        for (var pl : storage.blueprint().placements()) // os baús do armazém, onde a planta os põe
+            if (pl.material() == com.kingdomsai.core.construction.Material.CHEST) {
+                Pos c = storage.origin.offset(pl.x(), pl.y(), pl.z());
+                world.set(c, "minecraft:chest");
+                world.chests.put(c, new TreeMap<>());
+            }
         miner.bag.clear();
         king(new Pos(40, 64, 40), new Pos(40, 63, 40));
         r = jobAction(k, "npc", miner.name, "kind", "dig", "size", "7x7x7");
         print(r);
-        check("muita terra → avisa que vai esvaziar no armazém", r.ok() && r.message().contains("esvaziar a mochila"));
+        check("sem picareta → passa no armazém antes e pega a do reino", r.ok() && r.message().contains("passar no armazém") && r.message().contains("picareta"));
         PhysicalJob big = job(miner);
+        PhysicalJob.Task digTask = big.tasks.stream().filter(t -> t.kind == PhysicalJob.Kind.BREAK).findFirst().orElseThrow();
         seconds(5);
         print(cli.execute(player, "Andraus", new Pos(40, 64, 40), "call " + miner.name));
         seconds(2);
@@ -186,13 +199,23 @@ public final class SkillSelfTest {
         seconds(3);
         check("dispensado → retoma; ordem direta segue de noite", big.status == PhysicalJob.Status.ACTIVE);
         dayTime = 6000;
-        world.set(big.tasks.get(0).blocks.get(5), "minecraft:chest");
-        world.chests.put(big.tasks.get(0).blocks.get(5), new TreeMap<>(Map.of("minecraft:bread", 1)));
-        Pos chestPlaced = big.tasks.get(0).blocks.get(5);
+        world.set(digTask.blocks.get(5), "minecraft:chest");
+        world.chests.put(digTask.blocks.get(5), new TreeMap<>(Map.of("minecraft:bread", 1)));
+        Pos chestPlaced = digTask.blocks.get(5);
+        for (int s = 0; s < 120 && big.current() != digTask; s++) seconds(1);
+        check("buscou a picareta no armazém antes de cavar", Inventory.bestTool(miner, "pickaxe") != null);
+        // mochila quase cheia de tralha: no meio do buraco ele tem de voltar, guardar e retornar
+        String[] junk = {"andesite", "diorite", "granite", "gravel", "sand", "clay_ball", "flint", "bone", "string", "feather",
+                "leather", "paper", "book", "brick", "glass", "wool", "white_wool", "red_wool", "blue_wool", "green_wool", "lime_wool"};
+        for (String j : junk) miner.bag.put("minecraft:" + j, 64);
         runUntilDone(big, 900);
+        print(core.skills().describe(big));
         check("baú colocado no meio do trabalho é poupado", "minecraft:chest".equals(world.id(chestPlaced)));
-        check("esvaziou a mochila no baú do armazém", world.chests.get(stChest).values().stream().mapToInt(Integer::intValue).sum() > 0
-                && big.log.stream().anyMatch(l -> l.contains("Mochila cheia")));
+        List<Pos> stChests = core.treasury().chests(k);
+        check("mochila cheia → voltou, guardou no baú do armazém e retomou", !stChests.isEmpty()
+                && stChests.stream().anyMatch(c -> world.chests.get(c).containsKey("minecraft:flint"))
+                && big.log.stream().anyMatch(l -> l.contains("Mochila cheia")) && big.log.stream().anyMatch(l -> l.contains("Guardou no armazém")));
+        check("guardou a tralha mas ficou com o kit (picareta e ração)", Inventory.bestTool(miner, "pickaxe") != null && !miner.bag.containsKey("minecraft:flint"));
         check("ordem grande concluída", big.status == PhysicalJob.Status.DONE);
 
         king(new Pos(0, 64, 0), new Pos(-3, 63, 3));
@@ -204,11 +227,12 @@ public final class SkillSelfTest {
         king(new Pos(0, 64, 0), new Pos(3, 63, -3));
         r = jobAction(k, "npc", lumber.name, "kind", "break");
         PhysicalJob stuck = job(lumber);
+        stuck.tasks.removeIf(t -> t.auto); // só o bloco: a ida ao armazém já foi testada acima
         lumber.materialized = true; // entidade "presa": o Core não a move
         lumber.pos = new Pos(-60, 64, 0);
-        runUntilDone(stuck, SkillSystem.BLOCK_TIMEOUT + 10);
+        runUntilDone(stuck, SkillSystem.MOVE_TIMEOUT + 10);
         lumber.materialized = false;
-        check("bloco inalcançável é pulado após " + SkillSystem.BLOCK_TIMEOUT + " s", stuck.log.stream().anyMatch(l -> l.contains("pulei"))
+        check("bloco inalcançável (preso longe) é pulado após " + SkillSystem.MOVE_TIMEOUT + " s", stuck.log.stream().anyMatch(l -> l.contains("pulei"))
                 && stuck.status == PhysicalJob.Status.DONE);
 
         // --- 7. save/load
@@ -289,6 +313,18 @@ public final class SkillSelfTest {
         final Set<String> forced = new HashSet<>();
         final Set<String> playerForced = new HashSet<>();
         int forceCalls;
+        /** Hora do dia deste mundo (-1 = a do SkillSelfTest). */
+        long time = -1;
+        /** Plantações: crescimento 0..100 por posição de trigo. */
+        final Map<Pos, Integer> crops = new HashMap<>();
+        /** Monstros que os súditos materializados podem ver. */
+        final List<PhysicalPort.Sighting> monsters = new ArrayList<>();
+
+        public List<PhysicalPort.Sighting> threatsNear(Pos p, int radius) {
+            List<PhysicalPort.Sighting> out = new ArrayList<>();
+            for (PhysicalPort.Sighting m : monsters) if (m.pos().distXZ(p) <= radius) out.add(m);
+            return out;
+        }
 
         String id(Pos p) {
             String s = blocks.get(p);
@@ -334,7 +370,7 @@ public final class SkillSelfTest {
         }
 
         public long dayTime() {
-            return dayTime;
+            return time >= 0 ? time : dayTime;
         }
 
         public boolean isLoaded(int x, int z) {
@@ -359,7 +395,9 @@ public final class SkillSelfTest {
             boolean nearFluid = false;
             for (Pos n : List.of(p.offset(1, 0, 0), p.offset(-1, 0, 0), p.offset(0, 0, 1), p.offset(0, 0, -1), p.offset(0, 1, 0)))
                 if (id(n).equals("minecraft:water")) nearFluid = true;
-            double hard = switch (id) {
+            boolean ore = id.endsWith("_ore");
+            double hard = ore ? 3.0 : switch (id) {
+                case "minecraft:wheat", "minecraft:torch", "minecraft:oak_sapling" -> 0.0;
                 case "minecraft:stone" -> 1.5;
                 case "minecraft:dirt" -> 0.5;
                 case "minecraft:grass_block" -> 0.6;
@@ -368,16 +406,19 @@ public final class SkillSelfTest {
                 case "minecraft:bedrock" -> -1;
                 default -> 1.0;
             };
-            String tool = id.equals("minecraft:stone") ? "pickaxe" : id.contains("dirt") || id.contains("grass") ? "shovel"
+            String tool = id.equals("minecraft:stone") || ore ? "pickaxe" : id.contains("dirt") || id.contains("grass") || id.contains("farmland") ? "shovel"
                     : id.contains("log") || id.contains("planks") ? "axe" : null;
             String drop = switch (id) {
                 case "minecraft:stone" -> "minecraft:cobblestone";
+                case "minecraft:iron_ore" -> "minecraft:raw_iron";
+                case "minecraft:coal_ore" -> "minecraft:coal";
+                case "minecraft:farmland" -> "minecraft:dirt";
                 case "minecraft:grass_block" -> "minecraft:dirt";
                 case "minecraft:oak_leaves" -> null;
                 default -> air ? null : id;
             };
             return new BlockInfo(id, air, !air && !water && hard >= 0, hard, id.equals("minecraft:chest"), nearFluid, water,
-                    id.endsWith("_log"), id.endsWith("_leaves"), tool, id.equals("minecraft:stone"), drop);
+                    id.endsWith("_log"), id.endsWith("_leaves"), tool, id.equals("minecraft:stone") || ore, drop);
         }
 
         public Map<String, Integer> breakBlock(UUID npc, Pos p, String tool) {
@@ -385,13 +426,34 @@ public final class SkillSelfTest {
             blocks.put(p, "minecraft:air");
             broken.add(p);
             if (info.leaves()) return leafCounter++ % 4 == 0 ? Map.of("minecraft:oak_sapling", 1) : Map.of();
-            if (info.needsTool() && !info.tool().equals(tool)) return Map.of();
+            if (info.id().equals("minecraft:wheat")) { // maduro: trigo + semente; verde: só a semente
+                int g = Objects.requireNonNullElse(crops.remove(p), 0);
+                return g >= 100 ? Map.of("minecraft:wheat", 1, "minecraft:wheat_seeds", 1) : Map.of("minecraft:wheat_seeds", 1);
+            }
+            // a ferramenta chega como item de verdade da mochila ("minecraft:stone_pickaxe")
+            if (info.needsTool() && (tool == null || !tool.endsWith("_" + info.tool()))) return Map.of();
             return info.drop() == null ? Map.of() : Map.of(info.drop(), 1);
         }
 
         public boolean place(UUID npc, Pos p, String blockId) {
             if (!isAir(p)) return false;
+            String below = id(p.offset(0, -1, 0));
+            if (blockId.equals("minecraft:wheat") && !below.equals("minecraft:farmland")) return false; // trigo só em terra arada
+            if (blockId.endsWith("_sapling") && !below.matches(".*(dirt|grass).*")) return false;
+            if (blockId.endsWith("torch") && below.equals("minecraft:air")) return false;
             blocks.put(p, blockId);
+            if (blockId.equals("minecraft:wheat")) crops.put(p, 0);
+            return true;
+        }
+
+        public int growth(Pos p) {
+            return id(p).equals("minecraft:wheat") ? crops.getOrDefault(p, 0) : -1;
+        }
+
+        public boolean till(UUID npc, Pos p) {
+            String id = id(p);
+            if (!(id.equals("minecraft:dirt") || id.equals("minecraft:grass_block")) || !isAir(p.offset(0, 1, 0))) return false;
+            blocks.put(p, "minecraft:farmland");
             return true;
         }
 

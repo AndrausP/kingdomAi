@@ -74,6 +74,13 @@ public class KingdomNpcEntity extends PathfinderMob {
                 return isMilitary() && super.canUse();
             }
         });
+        // civis fogem de monstros (o Core também registra o susto, grita por socorro e chama os guardas)
+        goalSelector.addGoal(1, new AvoidEntityGoal<>(this, Monster.class, 10.0f, 0.65, 0.95) {
+            @Override
+            public boolean canUse() {
+                return !isMilitary() && super.canUse();
+            }
+        });
         goalSelector.addGoal(2, new OpenDoorGoal(this, true));
         goalSelector.addGoal(3, new NpcRoutineGoal(this));
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8.0f));
@@ -93,6 +100,7 @@ public class KingdomNpcEntity extends PathfinderMob {
     public void bind(Npc npc) {
         this.npcId = npc.id;
         entityData.set(SKIN, Math.floorMod(npc.skin, 9));
+        setHealth(getMaxHealth() * (float) Math.max(0.05, Math.min(1.0, npc.health / 100.0))); // ferido continua ferido
         refreshAppearance(npc);
     }
 
@@ -115,19 +123,32 @@ public class KingdomNpcEntity extends PathfinderMob {
                 .append(Component.literal(" [" + npc.title() + "]").withStyle(ChatFormatting.GRAY)));
         setCustomNameVisible(true);
         setItemSlot(EquipmentSlot.MAINHAND, toolFor(npc));
-        setItemSlot(EquipmentSlot.HEAD, npc.office == Office.KING ? new ItemStack(Items.GOLDEN_HELMET)
-                : npc.profession == Profession.GUARD ? new ItemStack(Items.IRON_HELMET)
-                : npc.profession == Profession.SOLDIER ? new ItemStack(Items.CHAINMAIL_HELMET) : ItemStack.EMPTY);
-        setItemSlot(EquipmentSlot.CHEST, npc.profession == Profession.SOLDIER ? new ItemStack(Items.IRON_CHESTPLATE) : ItemStack.EMPTY);
+        // o corpo só veste o que o Core diz que ele tem (kit do ofício); cativo/escravizado não usa equipamento militar
+        boolean free = npc.isFree();
+        ItemStack head = free ? stack(npc.gear.get("head")) : ItemStack.EMPTY;
+        setItemSlot(EquipmentSlot.HEAD, npc.office == Office.KING && head.isEmpty() ? new ItemStack(Items.GOLDEN_HELMET) : head);
+        setItemSlot(EquipmentSlot.CHEST, free ? stack(npc.gear.get("chest")) : ItemStack.EMPTY);
+        setItemSlot(EquipmentSlot.OFFHAND, free ? stack(npc.gear.get("offhand")) : ItemStack.EMPTY);
         for (EquipmentSlot s : EquipmentSlot.values()) setDropChance(s, 0f);
+    }
+
+    private static ItemStack stack(String id) {
+        net.minecraft.resources.ResourceLocation rl = id != null && id.contains(":") ? net.minecraft.resources.ResourceLocation.tryParse(id) : null;
+        return rl == null ? ItemStack.EMPTY : new ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl));
+    }
+
+    /** A ferramenta deste tipo que ele tem de verdade na mochila; sem ela, a genérica (etapas abstratas das cadeias). */
+    private static ItemStack realTool(Npc n, String type, net.minecraft.world.item.Item generic) {
+        String id = com.kingdomsai.core.skill.Inventory.bestTool(n, type);
+        return id != null ? stack(id) : new ItemStack(generic);
     }
 
     private static ItemStack toolFor(Npc n) {
         // Etapa de uma cadeia de trabalho: mostra a ferramenta ou o que está carregando.
         ItemStack duty = switch (n.heldItem == null ? "" : n.heldItem) {
-            case "pickaxe" -> new ItemStack(Items.IRON_PICKAXE);
-            case "axe" -> new ItemStack(Items.IRON_AXE);
-            case "hoe" -> new ItemStack(Items.IRON_HOE);
+            case "pickaxe" -> realTool(n, "pickaxe", Items.IRON_PICKAXE);
+            case "axe" -> realTool(n, "axe", Items.IRON_AXE);
+            case "hoe" -> realTool(n, "hoe", Items.IRON_HOE);
             case "book" -> new ItemStack(Items.WRITABLE_BOOK);
             case "ingot", "iron_ingot" -> new ItemStack(Items.IRON_INGOT);
             case "sword" -> new ItemStack(Items.IRON_SWORD);
@@ -138,22 +159,18 @@ public class KingdomNpcEntity extends PathfinderMob {
             case "log" -> new ItemStack(Items.OAK_LOG);
             case "stone" -> new ItemStack(Items.COBBLESTONE);
             case "letter" -> new ItemStack(Items.PAPER);
-            default -> {
-                // ordens físicas mandam o id do item ("minecraft:iron_pickaxe")
-                net.minecraft.resources.ResourceLocation rl = n.heldItem != null && n.heldItem.contains(":")
-                        ? net.minecraft.resources.ResourceLocation.tryParse(n.heldItem) : null;
-                yield rl == null ? ItemStack.EMPTY : new ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl));
-            }
+            default -> stack(n.heldItem); // ordens físicas mandam o id do item ("minecraft:stone_pickaxe")
         };
         if (!duty.isEmpty()) return duty;
         if (n.office == Office.ADVISOR || n.office == Office.CHANCELLOR) return new ItemStack(Items.WRITABLE_BOOK);
+        // de folga: a ferramenta do ofício que ele tem (sem ela, mãos vazias — o armazém repõe)
         return switch (n.profession) {
-            case FARMER -> new ItemStack(Items.IRON_HOE);
-            case LUMBERJACK -> new ItemStack(Items.IRON_AXE);
-            case MINER -> new ItemStack(Items.IRON_PICKAXE);
+            case FARMER -> stack(com.kingdomsai.core.skill.Inventory.bestTool(n, "hoe"));
+            case LUMBERJACK -> stack(com.kingdomsai.core.skill.Inventory.bestTool(n, "axe"));
+            case MINER -> stack(com.kingdomsai.core.skill.Inventory.bestTool(n, "pickaxe"));
             case BLACKSMITH -> new ItemStack(Items.IRON_INGOT);
             case BUILDER -> new ItemStack(Items.OAK_PLANKS);
-            case GUARD, SOLDIER -> new ItemStack(Items.IRON_SWORD);
+            case GUARD, SOLDIER -> n.equipped.isEmpty() ? new ItemStack(Items.WOODEN_SWORD) : new ItemStack(Items.IRON_SWORD); // sem arma do arsenal: espada de treino
             case MERCHANT -> new ItemStack(Items.EMERALD);
             case PRIEST, SCHOLAR -> new ItemStack(Items.BOOK);
             default -> ItemStack.EMPTY;
@@ -166,7 +183,7 @@ public class KingdomNpcEntity extends PathfinderMob {
     }
 
     /** Último item de cadeia mostrado na mão (troca na hora em que a etapa muda). */
-    private String shownHeld = "";
+    private String shownHeld = "", shownEquip = "";
 
     public boolean isTalking() {
         return level().getGameTime() < talkingUntil;
@@ -189,10 +206,47 @@ public class KingdomNpcEntity extends PathfinderMob {
         }
         n.pos = new Pos(getBlockX(), getBlockY(), getBlockZ());
         n.materialized = true;
-        if (tickCount % 100 == 0 || !n.heldItem.equals(shownHeld)) {
+        // a saúde que o Core recuperou (comer, dormir, descansar) volta ao corpo
+        if (tickCount % 100 == 0) {
+            float want = getMaxHealth() * (float) Math.max(0.05, Math.min(1.0, n.health / 100.0));
+            if (want > getHealth() + 0.5f) setHealth(want);
+        }
+        if (!n.spilled.isEmpty()) pickUpSpilled(n);
+        String equip = n.equipped + n.gear + n.bag.keySet().stream().filter(com.kingdomsai.core.skill.Inventory::isTool).toList();
+        if (tickCount % 100 == 0 || !n.heldItem.equals(shownHeld) || !equip.equals(shownEquip)) {
             shownHeld = n.heldItem;
+            shownEquip = equip;
             refreshAppearance(n);
         }
+    }
+
+    /** Recolhe só o que ELE derrubou com a mochila cheia (nunca os itens do jogador). */
+    private void pickUpSpilled(Npc n) {
+        ServerRuntime rt = ServerRuntime.get();
+        if (rt == null) return;
+        for (net.minecraft.world.entity.item.ItemEntity ie : level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                getBoundingBox().inflate(2.5))) {
+            if (!ie.isAlive() || ie.hasPickUpDelay()) continue;
+            ItemStack st = ie.getItem();
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            int took = rt.core().life().pickup(n, id, st.getCount());
+            if (took <= 0) continue;
+            take(ie, took);
+            ItemStack left = st.copy();
+            left.shrink(took);
+            if (left.isEmpty()) ie.discard();
+            else ie.setItem(left);
+        }
+    }
+
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        boolean hit = super.hurt(source, amount);
+        if (hit && !level().isClientSide) {
+            ServerRuntime rt = ServerRuntime.get();
+            if (rt != null) rt.onNpcHurt(this, source, amount);
+        }
+        return hit;
     }
 
     @Override

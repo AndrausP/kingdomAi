@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Todo o estado salvo do mundo. Cada entidade tem UUID — nunca só o nome. */
 public final class WorldState {
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 6;
 
     public int schemaVersion = SCHEMA_VERSION;
     public long seed = new Random().nextLong();
@@ -46,6 +46,8 @@ public final class WorldState {
     /** Tropas e colonos fora de casa (v3). */
     public Map<UUID, com.kingdomsai.core.military.Campaign> campaigns = new LinkedHashMap<>();
     public int campaignCounter;
+    /** Kits de trabalho e estoque inicial de bens já entregues (saves antigos recebem ao abrir) (v5). */
+    public boolean kitsGranted = true;
     public List<GameEvent> events = new ArrayList<>();
 
     public WorldState() {}

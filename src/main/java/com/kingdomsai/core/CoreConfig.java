@@ -20,6 +20,12 @@ public final class CoreConfig {
     public boolean keepOrderChunksLoaded = true;
     /** Limite de chunks mantidos carregados à distância (desempenho do servidor). */
     public int maxForcedChunks = 16;
+    /** Limite de blocos quebrados por segundo somando todos os súditos (evita lag com muitas ordens de corte/mina). */
+    public int maxBreaksPerSecond = 40;
+    /** Vida dos súditos: a IA (se configurada) decide a agenda dos importantes e escreve conversas entre eles. */
+    public boolean lifeLlm = true;
+    /** Chamadas por minuto da IA para a vida dos súditos (as falas com o rei têm prioridade). */
+    public int lifeLlmPerMinute = 4;
 
     public CoreConfig() {}
 

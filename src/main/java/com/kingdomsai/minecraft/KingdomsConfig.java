@@ -24,6 +24,9 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.ConfigValue<String> AI_CLAUDE_COMMAND;
     public static final ModConfigSpec.ConfigValue<String> AI_CLAUDE_MODEL;
     public static final ModConfigSpec.BooleanValue AI_CHAT_ORDERS;
+    public static final ModConfigSpec.BooleanValue AI_NPC_LIFE;
+    public static final ModConfigSpec.IntValue AI_NPC_LIFE_PER_MINUTE;
+    public static final ModConfigSpec.IntValue NPC_CHATTER_RADIUS;
 
     // [simulation]
     public static final ModConfigSpec.IntValue STRATEGIC_TICK;
@@ -39,6 +42,7 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.IntValue MAX_NPCS_PER_KINGDOM;
     public static final ModConfigSpec.BooleanValue KEEP_ORDER_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_FORCED_CHUNKS;
+    public static final ModConfigSpec.IntValue MAX_BREAKS_PER_SECOND;
 
     // [construction]
     public static final ModConfigSpec.BooleanValue CONSTRUCTION_ENABLED;
@@ -75,6 +79,11 @@ public final class KingdomsConfig {
                 .define("claude_model", "haiku");
         AI_CHAT_ORDERS = b.comment("Chat comum vira fala com os súditos: \"Rosalind, ataque Eldmark\", \"conselho, construam uma casa\", ou o súdito mais perto. Sem /k.")
                 .define("chat_orders", true);
+        AI_NPC_LIFE = b.comment("A IA decide a agenda dos súditos importantes (conselheiro, oficiais, famosos) e escreve as conversas deles entre si.",
+                        "Sem IA (ou desligado), as regras decidem — os súditos vivem do mesmo jeito.")
+                .define("npc_life", true);
+        AI_NPC_LIFE_PER_MINUTE = b.comment("Chamadas por minuto para a vida dos súditos (as falas com o rei têm prioridade). Com Claude Code cada chamada abre um processo: use pouco.")
+                .defineInRange("npc_life_per_minute", 3, 0, 30);
         b.pop();
 
         b.push("simulation");
@@ -95,6 +104,10 @@ public final class KingdomsConfig {
                 .define("keep_order_chunks_loaded", true);
         MAX_FORCED_CHUNKS = b.comment("Máximo de chunks mantidos carregados à distância (desempenho). Ordens além disso esperam na fila.")
                 .defineInRange("max_forced_chunks", 16, 0, 256);
+        NPC_CHATTER_RADIUS = b.comment("Até quantos blocos de distância Vossa Majestade ouve as conversas entre os súditos (0 = não mostrar no chat).")
+                .defineInRange("npc_chatter_radius", 12, 0, 48);
+        MAX_BREAKS_PER_SECOND = b.comment("Máximo de blocos quebrados por segundo somando todos os súditos (lenhadores, mineiros, limpeza). Evita lag.")
+                .defineInRange("max_breaks_per_second", 40, 1, 1000);
         b.pop();
 
         b.push("construction");
@@ -149,6 +162,10 @@ public final class KingdomsConfig {
         KEYS.put("simulation.strategic_tick_seconds", STRATEGIC_TICK);
         KEYS.put("simulation.keep_order_chunks_loaded", KEEP_ORDER_CHUNKS);
         KEYS.put("simulation.max_forced_chunks", MAX_FORCED_CHUNKS);
+        KEYS.put("simulation.max_breaks_per_second", MAX_BREAKS_PER_SECOND);
+        KEYS.put("simulation.npc_chatter_radius", NPC_CHATTER_RADIUS);
+        KEYS.put("ai.npc_life", AI_NPC_LIFE);
+        KEYS.put("ai.npc_life_per_minute", AI_NPC_LIFE_PER_MINUTE);
         KEYS.put("construction.enabled", CONSTRUCTION_ENABLED);
         KEYS.put("construction.builder_blocks_per_second", BUILDER_BLOCKS_PER_SECOND);
         KEYS.put("construction.max_blocks_per_tick", MAX_BLOCKS_PER_TICK);
@@ -211,6 +228,9 @@ public final class KingdomsConfig {
         c.diplomacyEnabled = DIPLOMACY_ENABLED.get();
         c.keepOrderChunksLoaded = KEEP_ORDER_CHUNKS.get();
         c.maxForcedChunks = MAX_FORCED_CHUNKS.get();
+        c.maxBreaksPerSecond = MAX_BREAKS_PER_SECOND.get();
+        c.lifeLlm = AI_NPC_LIFE.get();
+        c.lifeLlmPerMinute = AI_NPC_LIFE_PER_MINUTE.get();
         return c;
     }
 

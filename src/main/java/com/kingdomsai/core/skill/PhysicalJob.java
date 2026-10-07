@@ -26,7 +26,13 @@ public final class PhysicalJob {
 
     public enum Kind {
         BREAK("quebrar"), CHOP("cortar árvore"), TAKE("pegar no baú"), PUT("guardar no baú"), CRAFT("fabricar"), GIVE("entregar ao rei"),
-        PLANT("plantar muda");
+        PLANT("plantar muda"),
+        /** Ida ao armazém buscar o que falta do kit (ferramenta, reserva, comida, sementes, tochas). */
+        RESUPPLY("reabastecer no armazém"),
+        /** Ida ao armazém guardar o que juntou (a produção entra no estoque do reino). */
+        STORE("guardar no armazém"),
+        /** Lavoura: colher o que está maduro, arar, plantar e replantar. */
+        FARM("cuidar da lavoura");
 
         public final String display;
 
@@ -54,6 +60,8 @@ public final class PhysicalJob {
         /** Alvo atual e desde quando o NPC tenta alcançá-lo (para pular o inalcançável). */
         public Pos targetBlock;
         public long targetSince;
+        /** Desde quando ele está perto do bloco-alvo (-1 = ainda andando até lá): só aí conta o "não alcanço". */
+        public transient long nearSince = -1;
     }
 
     public UUID id;
@@ -73,6 +81,26 @@ public final class PhysicalJob {
     public List<String> log = new ArrayList<>();
     /** Tudo o que esta ordem rendeu (blocos quebrados, itens feitos). */
     public Map<String, Integer> gained = new TreeMap<>();
+
+    // --- trabalho contínuo ("produza madeira", "trabalhe na mina", "cuide da fazenda") (v5)
+    public boolean continuous;
+    /** wood | stone | ore | farm */
+    public String labor = "";
+    /** Meta em unidades entregues no armazém (0 = sem fim). */
+    public int quota;
+    /** Unidades entregues no armazém por esta ordem (toras, pedregulho, minério, trigo). */
+    public int produced;
+    /** Centro do local de trabalho e raio autorizado. */
+    public Pos site;
+    public int radius = 16;
+    /** Minério alvo (ore) e túnel de mineração controlada: direção (0..3) e quanto já abriu. */
+    public String oreId = "";
+    public int tunnelDir, tunnelLength;
+    /** Quando procurar de novo (nada maduro, nenhuma árvore) e nº de idas ao armazém. */
+    public long nextPlanTick;
+    public int trips;
+    /** Ritmo do trabalho simulado (área descarregada): progresso até o próximo item. */
+    public double abstractProgress;
 
     public Task current() {
         return cursor < tasks.size() ? tasks.get(cursor) : null;

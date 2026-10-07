@@ -58,6 +58,9 @@ public final class ManagerSnapshot {
         kj.addProperty("area", core.state().territory.areaKm2(k.id));
         kj.addProperty("cells", core.state().territory.countOwned(k.id));
         kj.addProperty("stability", k.stability);
+        var step = core.opening().current(k);
+        kj.addProperty("roteiro", step == null || core.opening().age(k) >= com.kingdomsai.core.ai.Opening.PERIOD ? ""
+                : "Roteiro de início (" + (k.openingDone.size() + 1) + "/" + com.kingdomsai.core.ai.Opening.STEPS.size() + "): " + step.title() + " — " + step.say());
         kj.addProperty("morale", k.morale);
         kj.addProperty("legitimacy", k.legitimacy);
         kj.addProperty("tax", k.laws.taxLevel);
@@ -177,6 +180,13 @@ public final class ManagerSnapshot {
             o.addProperty("mine", mine);
             o.addProperty("k", kIndex.getOrDefault(n.kingdomId, -1));
             o.addProperty("summary", n.personalitySummary());
+            o.addProperty("mood", (int) n.mood);
+            o.addProperty("moodWord", com.kingdomsai.core.life.LifeSystem.moodWord(n));
+            o.addProperty("needs", "fome " + (int) n.hunger + " · energia " + (int) n.energy + " · companhia " + (int) n.social + " · saúde " + (int) n.health);
+            Npc partner = n.partnerId == null ? null : core.npc(n.partnerId);
+            o.addProperty("life", (n.intention != null && n.intention.active(core.tick()) ? "Decidiu: " + n.intention.describe() : "")
+                    + (partner != null ? (n.intention != null && n.intention.active(core.tick()) ? " · " : "") + "par: " + partner.name : "")
+                    + (n.goal.isBlank() ? "" : " · objetivo: " + n.goal));
             npcs.add(o);
         }
         root.add("npcs", npcs);

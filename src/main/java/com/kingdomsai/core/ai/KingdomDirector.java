@@ -132,7 +132,14 @@ public final class KingdomDirector {
                     ActionResult r = exec(k, ActionType.BUILD, "blueprint", "farm");
                     if (r.ok()) return r;
                 }
-                String from = core.count(k.id, Profession.PEASANT) > 0 ? "PEASANT" : core.count(k.id, Profession.MERCHANT) > 1 ? "MERCHANT" : "LUMBERJACK";
+                // nunca tira o único lenhador: sem madeira não há fazenda, casa nem nada
+                String from = core.count(k.id, Profession.PEASANT) > 0 ? "PEASANT" : core.count(k.id, Profession.MERCHANT) > 1 ? "MERCHANT"
+                        : core.count(k.id, Profession.LUMBERJACK) > 1 ? "LUMBERJACK" : null;
+                if (from == null) {
+                    long building = core.construction().projects(k.id).stream().filter(b -> b.blueprintId.equals("farm")).count();
+                    return building > 0 ? ActionResult.ok("Fazenda já em obras: quando ficar pronta, a lavoura rende 60% a mais (não tiro o único lenhador).")
+                            : null;
+                }
                 return exec(k, ActionType.WORK, "profession", "FARMER", "amount", "1", "from", from);
             }
             case "BUILD_HOUSING" -> {
@@ -170,9 +177,51 @@ public final class KingdomDirector {
         }
     }
 
+    /** Rei por quem o conselheiro está agindo (objetivo delegado); null = IA de reino agindo por si. */
+    private UUID actingFor;
+
     private ActionResult exec(Kingdom k, ActionType type, String... kv) {
+        if (actingFor != null)
+            return core.actions().execute(ActionRequest.of(k.id, actingFor, ActionRequest.ActorKind.PLAYER, type, ActionRequest.Source.LLM, kv));
         return core.actions().execute(ActionRequest.of(k.id, null, ActionRequest.ActorKind.DIRECTOR, type,
                 ActionRequest.Source.DIRECTOR, kv));
+    }
+
+    /** Objetivos que o rei pode delegar ao conselheiro (e o "jeito" de pensar de cada um). */
+    public static String goalOf(String text) {
+        String n = com.kingdomsai.core.common.Text.norm(text == null ? "" : text);
+        if (n.matches(".*(comida|aliment|fome|colheita|lavoura|food).*")) return "INCREASE_FOOD";
+        if (n.matches(".*(moradi|casa|habita|lar|housing).*")) return "BUILD_HOUSING";
+        if (n.matches(".*(defes|exercit|seguranc|protec|fortific|militar|defense).*")) return "FORTIFY";
+        if (n.matches(".*(territ|expan|terra|fronteir).*")) return "EXPAND";
+        if (n.matches(".*(madeira|lenha|pedra|trabalh|mao de obra|construtor|producao|economia|workforce).*")) return "BALANCE_WORKFORCE";
+        return null;
+    }
+
+    /**
+     * "Conselheiro, cuide da comida": o conselheiro avalia o reino como a IA dos rivais avalia o dela e executa os passos
+     * em nome do rei (até 3), pelo mesmo ActionSystem. Retorna o raciocínio e o que foi feito.
+     */
+    public List<String> pursue(Kingdom k, String goal, UUID king) {
+        List<String> out = new ArrayList<>();
+        Priority p = evaluate(k).stream().filter(x -> x.goal().equals(goal)).findFirst().orElse(null);
+        out.add("Avaliei: " + (p == null ? goal : p.reason()) + ".");
+        actingFor = king;
+        try {
+            for (int i = 0; i < 3; i++) {
+                ActionResult r = act(k, goal);
+                if (r == null) break;
+                out.add((r.ok() ? "✓ " : "✗ ") + r.message());
+                if (!r.ok()) break;
+                if (goal.equals("BUILD_HOUSING") || goal.equals("EXPAND") && i >= 1) break;
+                Priority again = evaluate(k).stream().filter(x -> x.goal().equals(goal)).findFirst().orElse(null);
+                if (again == null || again.score() < 0.35) break; // resolvido o bastante
+            }
+        } finally {
+            actingFor = null;
+        }
+        if (out.size() == 1) out.add("Nada a fazer agora: " + (p == null ? "já está em ordem" : p.reason()) + ".");
+        return out;
     }
 
     /** Reinos do jogador que estão de olho neste reino recebem o relatório dos espiões. */
