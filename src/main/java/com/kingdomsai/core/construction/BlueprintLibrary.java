@@ -28,6 +28,8 @@ public final class BlueprintLibrary {
                 cost(ResourceType.WOOD, 35, ResourceType.STONE, 10), 0, false, true));
         register(house("town_hall", "Salão Real", Category.CIVIC, 9, 9, 4, 1,
                 cost(ResourceType.WOOD, 50, ResourceType.STONE, 50), 2, false, true));
+        register(house("library", "Biblioteca", Category.CIVIC, 7, 7, 4, 0,
+                cost(ResourceType.WOOD, 45, ResourceType.STONE, 30), 0, false, false));
         register(farm());
     }
 
@@ -94,6 +96,7 @@ public final class BlueprintLibrary {
         if (n.startsWith("quartel") || n.startsWith("barrack") || n.startsWith("caserna")) return BY_ID.get("barracks");
         if (n.startsWith("forja") || n.startsWith("ferrar") || n.startsWith("smith")) return BY_ID.get("smithy");
         if (n.startsWith("armaz") || n.startsWith("celeiro") || n.startsWith("deposit") || n.startsWith("storage")) return BY_ID.get("storage");
+        if (n.startsWith("bibliot") || n.startsWith("library") || n.startsWith("escola")) return BY_ID.get("library");
         if (n.startsWith("salao") || n.startsWith("prefeit") || n.startsWith("castelo") || n.startsWith("hall") || n.startsWith("paco")) return BY_ID.get("town_hall");
         return null;
     }
@@ -175,6 +178,16 @@ public final class BlueprintLibrary {
         }
         if (id.equals("town_hall")) {
             p.add(new Placement(w / 2, 0, d / 2, Material.BELL, Facing.NONE));
+        }
+        if (id.equals("library")) {
+            // estantes no fundo e nas laterais, atril no meio: onde se lê e se escreve
+            for (int x = 1; x < w - 1; x++)
+                for (int y = 0; y < 2; y++) p.add(new Placement(x, y, d - 2, Material.BOOKSHELF, Facing.NONE));
+            for (int z = 2; z < d - 2; z++) {
+                p.add(new Placement(1, 0, z, Material.BOOKSHELF, Facing.NONE));
+                p.add(new Placement(w - 2, 0, z, Material.BOOKSHELF, Facing.NONE));
+            }
+            p.add(new Placement(w / 2, 0, d / 2, Material.LECTERN, Facing.NORTH));
         }
         if (!forge && !storage && w >= 5) p.add(new Placement(w - 2, 0, 1, Material.CRAFTING, Facing.NONE));
         p.add(new Placement(w - 2, 0, d / 2, Material.LIGHT, Facing.NONE));

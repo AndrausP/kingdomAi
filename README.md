@@ -25,7 +25,24 @@ Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1"
 | Configurar IA/modelo | aba **⚙ Config** do Manager ou `/k config ...` |
 | Todos os comandos | `/k help` (`/kingdom` e `/reino` também funcionam) |
 
-Comandos úteis: `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `claim`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`.
+Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `claim`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`.
+
+### Rotinas e cadeias de trabalho
+
+Fale com um súdito (botão direito → chat) e ele **adota a rotina daqui em diante**. A IA (ou o interpretador de regras, sem LLM) monta a cadeia, o jogo **valida cada etapa antes** e mostra o plano:
+
+| Você diz | O que acontece |
+|---|---|
+| ao minerador: *"daqui pra frente minere ferro e leve para o ferreiro derreter e guardar no baú"* | minerador vai à mina → minera ferro bruto e carvão → entrega no baú da forja → ferreiro **espera o ferro**, funde as barras → guarda no armazém (vira Ferro do reino) |
+| ao fazendeiro: *"plante e colha o trigo"* | planta → **espera o trigo amadurecer** (~4 min) → colhe (volta semente para o baú da fazenda) → guarda no armazém |
+| *"construa uma biblioteca"*, depois ao estudioso: *"escreva um livro sobre a mina de ferro"* | escreve na biblioteca um livro feito das memórias dele e do que vê no reino; outros podem **ler** e passam a lembrar do conteúdo |
+| *"escreva uma carta para Bruna dizendo que a colheita foi boa"* | escreve e **leva a carta em mãos**; Bruna guarda na memória (se não souber ler, o mensageiro lê para ela) |
+| *"pode parar com essa rotina"* | encerra a rotina; a pessoa volta à profissão |
+
+- **Validação**: sem forja, sem carvão chegando na forja, colher sem plantar, fazendeiro tentando fundir, iletrado tentando escrever, entregar o que não tem na mão → a cadeia é recusada com o motivo. Gargalos e sobras viram avisos.
+- **Quebra e retomada**: se o ferreiro morre, muda de profissão ou a forja some, a cadeia **quebra** (evento ⚠) e guarda onde cada um parou. A cada 15 s ela tenta se remontar (outro ferreiro livre, prédio de volta) e **retoma da mesma etapa**. Esperar insumo não é quebra.
+- Comandos: `chains` · `chain <nº>` (etapas, quem está onde, baús, histórico) · `chain <nº> stop|resume` · `chain new minerar_ferreiro npc=Nome forge=true` · `books` · `book <nº>`.
+- No Manager, o painel **ROTINAS** mostra cada cadeia (⛓ ativa / ⚠ quebrada) e o que cada pessoa está fazendo; o NPC segura a ferramenta ou o item da etapa (picareta, minério, barra, livro, carta).
 
 ### Construção
 

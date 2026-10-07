@@ -48,6 +48,16 @@ public final class ContextBuilder {
                 .append("width/depth 5-15, floors 1-3, roof (plano|piramide|duas_aguas), wall e roof_material (")
                 .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false).");
         sb.append("\nPrazos: deadline=30s|5m|2h|1d|amanha (1 dia = 20 min de jogo). DEADLINE muda o prazo de uma obra existente.");
+        sb.append("\nCADEIAS DE TRABALHO (CHAIN): rotinas que o NPC adota daqui em diante (repeat=true) ou tarefa única (repeat=false). ")
+                .append("Prefira um template; para algo diferente, mande steps como lista JSON ")
+                .append("[{\"role\":\"minerador\",\"type\":\"MINE\",\"params\":{\"item\":\"raw_iron\",\"amount\":\"8\"}}, ...]. ")
+                .append("O nome do papel pode ser uma profissão (minerador, ferreiro, fazendeiro, lenhador, escriba). Etapas: ");
+        for (com.kingdomsai.core.work.StepType st : com.kingdomsai.core.work.StepType.values())
+            sb.append(st.name()).append('(').append(st.paramHelp).append("), ");
+        sb.append("Itens: raw_iron, coal, stone, log, wheat, iron_ingot, sword, letter. Lugares: smithy, storage, farm, library, mine, forest. ")
+                .append("Regras: só se entrega o que está na mão; SMELT usa ferro bruto e carvão que alguém entregou na forja; HARVEST exige PLANT; ")
+                .append("ler/escrever exige biblioteca e alguém alfabetizado. Para parar: STOP_CHAIN. Templates: ");
+        com.kingdomsai.core.work.ChainTemplates.TEMPLATES.forEach((id, d) -> sb.append(id).append(" = ").append(d).append("; "));
         sb.append("\nTratados: NON_AGGRESSION, TRADE_AGREEMENT, DEFENSIVE_ALLIANCE, OPEN_BORDERS. Recursos: FOOD, WOOD, STONE, IRON, GOLD, WEAPONS.\n");
         return sb.toString();
     }
@@ -73,6 +83,9 @@ public final class ContextBuilder {
                 .append(". Lealdade ao rei: ").append(npc.loyalty).append("/100. Fama: ").append(npc.fame).append(".\n");
         user.append("Agora: ").append(npc.activity.display).append(" (").append(npc.currentTask).append("). Fome ")
                 .append((int) npc.hunger).append("/100, energia ").append((int) npc.energy).append("/100.\n");
+        if (!npc.carrying.isEmpty()) user.append("Na mão: ").append(com.kingdomsai.core.work.ChainValidator.summary(npc.carrying)).append(".\n");
+        user.append(com.kingdomsai.core.work.ChainValidator.canRead(npc) ? "Sabe ler" : "Não sabe ler")
+                .append(com.kingdomsai.core.work.ChainValidator.canWrite(npc) ? " e escrever.\n" : (com.kingdomsai.core.work.ChainValidator.canRead(npc) ? ", mas não escreve.\n" : ".\n"));
         if (npcKingdom != null) user.append("Local: ").append(core.scheduler() == null ? "" : sanitize(npcKingdom.name))
                 .append(", perto de ").append(npc.pos == null ? "?" : (int) npc.pos.distXZ(npcKingdom.center) + " blocos do centro").append(".\n");
         if (playerKingdom != null) for (String f : core.advisor().facts(playerKingdom)) user.append(f).append('\n');

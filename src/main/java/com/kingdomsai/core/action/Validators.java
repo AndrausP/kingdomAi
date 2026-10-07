@@ -86,6 +86,13 @@ public final class Validators {
                 if (r.intParam("amount", 0) < 1 || r.intParam("amount", 0) > 5000)
                     return ActionResult.reject("invalid_param", "Quantidade inválida.");
             }
+            case CHAIN -> {
+                try {
+                    com.kingdomsai.core.work.ChainTemplates.spec(r.params(), core, core.kingdom(r.kingdomId()));
+                } catch (IllegalArgumentException e) {
+                    return ActionResult.reject("invalid_param", e.getMessage());
+                }
+            }
             case NEGOTIATE -> {
                 if (r.param("treaty") == null && (ResourceType.parse(r.param("give")) == null || ResourceType.parse(r.param("want")) == null))
                     return ActionResult.reject("missing_param", "NEGOTIATE exige treaty=<tipo> ou give/give_amount/want/want_amount.");
@@ -165,6 +172,15 @@ public final class Validators {
                 if (core.count(k.id, Profession.SOLDIER) < r.intParam("amount", 1))
                     return ActionResult.reject("not_enough_people", "Só há " + core.count(k.id, Profession.SOLDIER) + " soldados.");
             }
+            case CHAIN -> {
+                var v = com.kingdomsai.core.work.ChainValidator.validate(core, k,
+                        com.kingdomsai.core.work.ChainTemplates.spec(r.params(), core, k));
+                if (!v.ok()) return ActionResult.reject("chain_invalid", "A cadeia não fecha: " + String.join(" ", v.errors()));
+            }
+            case STOP_CHAIN -> {
+                if (findChain(core, k, r) == null)
+                    return ActionResult.reject("not_found", "Não encontrei essa cadeia" + (r.param("npc") != null ? " para " + r.param("npc") : "") + ". Veja /k chains.");
+            }
             case CLAIM -> {
                 if (core.state().territory.claimableFrontier(k.id, k.center).isEmpty())
                     return ActionResult.reject("no_frontier", "Não há células livres na fronteira.");
@@ -184,6 +200,12 @@ public final class Validators {
         }
         return null;
     };
+
+    public static com.kingdomsai.core.work.WorkChain findChain(KingdomsCore core, Kingdom k, ActionRequest r) {
+        String ref = r.param("chain") != null ? r.param("chain") : r.param("npc");
+        var c = core.work().find(k.id, ref);
+        return c != null && c.live() ? c : null;
+    }
 
     /** Há recursos? A IA nunca inventa recursos. */
     public static final Validator RESOURCES = (r, core) -> {

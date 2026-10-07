@@ -56,6 +56,10 @@ public final class NpcScheduler {
         }
         if (evening) return new Intent(NpcActivity.SOCIALIZE, k.center.offset((h % 11) - 5, 0, (h / 11 % 7) - 3), 4);
 
+        // Rotina dada pelo rei (cadeia de trabalho) vem antes da rotina da profissão.
+        Intent duty = core.work().intentFor(n);
+        if (duty != null) return duty;
+
         return switch (n.profession) {
             case BUILDER -> {
                 Building b = core.construction().currentProjectOf(n);

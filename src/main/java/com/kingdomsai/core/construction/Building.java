@@ -37,6 +37,12 @@ public final class Building {
     public List<UUID> residents = new ArrayList<>();
     /** Para quem a construção foi feita (ex.: "casa para o ferreiro"). */
     public UUID dedicatedTo;
+    /** Baú do prédio (forja, armazém, fazenda...) usado pelas cadeias de trabalho. */
+    public java.util.Map<com.kingdomsai.core.work.Item, Integer> inventory = new java.util.EnumMap<>(com.kingdomsai.core.work.Item.class);
+    /** Fazenda: tick em que foi plantada (0 = vazia). */
+    public long cropPlantedTick;
+    /** Fazenda: já recebeu o saco de sementes inicial. */
+    public boolean seeded;
 
     public Building() {}
 

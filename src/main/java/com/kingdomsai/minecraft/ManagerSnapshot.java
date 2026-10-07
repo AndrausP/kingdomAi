@@ -166,6 +166,29 @@ public final class ManagerSnapshot {
         }
         root.add("projects", projects);
 
+        // rotinas / cadeias de trabalho vivas (ativas ou quebradas esperando retomada)
+        JsonArray chains = new JsonArray();
+        for (var c : core.work().chains(k.id)) {
+            if (!c.live()) continue;
+            JsonObject o = new JsonObject();
+            o.addProperty("n", c.number);
+            o.addProperty("name", c.name);
+            o.addProperty("broken", c.status == com.kingdomsai.core.work.WorkChain.Status.BROKEN);
+            o.addProperty("reason", c.brokenReason);
+            o.addProperty("cycles", c.cycles);
+            JsonArray roles = new JsonArray();
+            for (var r : c.roles.values()) {
+                var n = core.npc(r.npcId);
+                var s = c.current(r);
+                if (n == null || s == null) continue;
+                roles.add(n.name + " · " + r.state.display + (r.status.isBlank() || r.state == com.kingdomsai.core.work.WorkChain.DutyState.WORKING
+                        ? ": " + s.describe() : ": " + r.status));
+            }
+            o.add("roles", roles);
+            chains.add(o);
+        }
+        root.add("chains", chains);
+
         JsonArray bs = new JsonArray();
         for (Building b : core.state().buildings.values()) {
             if (b.status == Building.Status.ABANDONED) continue;

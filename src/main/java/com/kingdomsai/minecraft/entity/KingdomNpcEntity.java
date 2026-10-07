@@ -123,6 +123,24 @@ public class KingdomNpcEntity extends PathfinderMob {
     }
 
     private static ItemStack toolFor(Npc n) {
+        // Etapa de uma cadeia de trabalho: mostra a ferramenta ou o que está carregando.
+        ItemStack duty = switch (n.heldItem == null ? "" : n.heldItem) {
+            case "pickaxe" -> new ItemStack(Items.IRON_PICKAXE);
+            case "axe" -> new ItemStack(Items.IRON_AXE);
+            case "hoe" -> new ItemStack(Items.IRON_HOE);
+            case "book" -> new ItemStack(Items.WRITABLE_BOOK);
+            case "ingot", "iron_ingot" -> new ItemStack(Items.IRON_INGOT);
+            case "sword" -> new ItemStack(Items.IRON_SWORD);
+            case "raw_iron" -> new ItemStack(Items.RAW_IRON);
+            case "coal" -> new ItemStack(Items.COAL);
+            case "wheat" -> new ItemStack(Items.WHEAT);
+            case "seeds" -> new ItemStack(Items.WHEAT_SEEDS);
+            case "log" -> new ItemStack(Items.OAK_LOG);
+            case "stone" -> new ItemStack(Items.COBBLESTONE);
+            case "letter" -> new ItemStack(Items.PAPER);
+            default -> ItemStack.EMPTY;
+        };
+        if (!duty.isEmpty()) return duty;
         if (n.office == Office.ADVISOR || n.office == Office.CHANCELLOR) return new ItemStack(Items.WRITABLE_BOOK);
         return switch (n.profession) {
             case FARMER -> new ItemStack(Items.IRON_HOE);
@@ -141,6 +159,9 @@ public class KingdomNpcEntity extends PathfinderMob {
         Npc n = npc();
         return n != null && n.profession.isMilitary();
     }
+
+    /** Último item de cadeia mostrado na mão (troca na hora em que a etapa muda). */
+    private String shownHeld = "";
 
     public boolean isTalking() {
         return level().getGameTime() < talkingUntil;
@@ -163,7 +184,10 @@ public class KingdomNpcEntity extends PathfinderMob {
         }
         n.pos = new Pos(getBlockX(), getBlockY(), getBlockZ());
         n.materialized = true;
-        if (tickCount % 100 == 0) refreshAppearance(n);
+        if (tickCount % 100 == 0 || !n.heldItem.equals(shownHeld)) {
+            shownHeld = n.heldItem;
+            refreshAppearance(n);
+        }
     }
 
     @Override

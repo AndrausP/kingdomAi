@@ -67,6 +67,8 @@ public final class ActionSystem {
                     yield why == null ? ActionResult.ok("Paz aceita.") : ActionResult.reject("refused", why);
                 }
                 case TALK -> ActionResult.ok("");
+                case CHAIN -> chain(k, r);
+                case STOP_CHAIN -> ActionResult.ok(core.work().stop(Validators.findChain(core, k, r), "ordem do rei"));
                 default -> ActionResult.reject("not_available_in_this_phase", r.type() + " ainda não foi implementada.");
             };
         } catch (RuntimeException ex) {
@@ -122,6 +124,17 @@ public final class ActionSystem {
         if (deadline > 0) for (Building b : planned) msg += " " + core.construction().setDeadline(b, deadline);
         else if (hasBuilder && !planned.isEmpty()) msg += " ETA " + core.construction().formatEta(planned.get(0)) + ".";
         return ActionResult.ok(msg);
+    }
+
+    /** Cadeia já aprovada pelos validadores: cria e explica o plano (com os avisos). */
+    private ActionResult chain(Kingdom k, ActionRequest r) {
+        var spec = com.kingdomsai.core.work.ChainTemplates.spec(r.params(), core, k);
+        var v = com.kingdomsai.core.work.ChainValidator.validate(core, k, spec);
+        var c = core.work().start(k, v.chain(), r.param("order") != null ? r.param("order") : spec.name);
+        StringBuilder sb = new StringBuilder("Cadeia #" + c.number + " «" + c.name + "» " + (c.repeat ? "(rotina contínua)" : "(tarefa única)") + ":");
+        for (String line : v.plan()) sb.append("\n   ").append(line);
+        for (String w : v.warnings()) sb.append("\n⚠ ").append(w);
+        return ActionResult.ok(sb.toString());
     }
 
     private ActionResult recruit(Kingdom k, int amount) {

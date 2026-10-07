@@ -174,6 +174,11 @@ public final class CoreSelfTest {
         // 9. Blueprints coerentes
         for (Blueprint b : BlueprintLibrary.all()) check("blueprint " + b.id() + " tem blocos (" + b.blockCount() + ")", b.blockCount() > 20);
 
+        // 10. Cadeias de trabalho, livros e cartas
+        int[] work = WorkSelfTest.run();
+        passed += work[0];
+        failed += work[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

@@ -54,6 +54,7 @@ public final class KingdomsCore {
     private final ContextBuilder contextBuilder;
     private final LlmGateway llm;
     private final DialogueService dialogue;
+    private final com.kingdomsai.core.work.WorkSystem work;
 
     public KingdomsCore(WorldState state, CoreConfig config) {
         this.state = state;
@@ -75,6 +76,7 @@ public final class KingdomsCore {
         this.contextBuilder = new ContextBuilder(this);
         this.llm = new LlmGateway(this);
         this.dialogue = new DialogueService(this);
+        this.work = new com.kingdomsai.core.work.WorkSystem(this);
         wireReactions();
     }
 
@@ -111,6 +113,7 @@ public final class KingdomsCore {
         long t = state.tick;
         if (t % 20 == 0) {
             scheduler.tickSecond();
+            work.tickSecond();
             construction.tickSecond();
         }
         if (t % config.ticks(config.economicTickSeconds) == 0) economy.tick();
@@ -333,6 +336,10 @@ public final class KingdomsCore {
 
     public DialogueService dialogue() {
         return dialogue;
+    }
+
+    public com.kingdomsai.core.work.WorkSystem work() {
+        return work;
     }
 
     public int llmMaxChars() {

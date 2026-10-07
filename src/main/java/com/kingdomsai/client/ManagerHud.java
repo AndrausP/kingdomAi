@@ -94,6 +94,39 @@ public final class ManagerHud {
             g.drawString(font, "Lealdade " + sn.get("loyalty").getAsInt() + " · fama " + sn.get("fame").getAsInt(), 9, y + 28, levelColor(sn.get("loyalty").getAsInt()));
         }
 
+        // --- rotinas / cadeias de trabalho (esquerda, abaixo das obras)
+        JsonArray chains = d.has("chains") ? d.getAsJsonArray("chains") : new JsonArray();
+        if (!chains.isEmpty()) {
+            y += sn != null ? 50 : 6;
+            int pw = 170;
+            int rows = Math.min(3, chains.size());
+            int lines = 0;
+            for (int i = 0; i < rows; i++) {
+                JsonObject c = chains.get(i).getAsJsonObject();
+                lines += 1 + (c.get("broken").getAsBoolean() ? 1 : Math.min(2, c.getAsJsonArray("roles").size()));
+            }
+            panel(g, 4, y, 4 + pw, y + 14 + lines * 10 + rows * 2);
+            g.drawString(font, "ROTINAS", 9, y + 4, ACCENT);
+            int ly = y + 15;
+            for (int i = 0; i < rows; i++) {
+                JsonObject c = chains.get(i).getAsJsonObject();
+                boolean broken = c.get("broken").getAsBoolean();
+                String head = (broken ? "⚠ " : "⛓ ") + "#" + c.get("n").getAsInt() + " " + c.get("name").getAsString()
+                        + (c.get("cycles").getAsInt() > 0 ? " ×" + c.get("cycles").getAsInt() : "");
+                g.drawString(font, font.plainSubstrByWidth(head, pw - 10), 9, ly, broken ? BAD : GOOD);
+                ly += 10;
+                JsonArray roles = c.getAsJsonArray("roles");
+                if (broken) {
+                    g.drawString(font, font.plainSubstrByWidth("quebrou: " + c.get("reason").getAsString(), pw - 14), 13, ly, WARN);
+                    ly += 10;
+                } else for (int j = 0; j < Math.min(2, roles.size()); j++) {
+                    g.drawString(font, font.plainSubstrByWidth(roles.get(j).getAsString(), pw - 14), 13, ly, DIM);
+                    ly += 10;
+                }
+                ly += 2;
+            }
+        }
+
         // --- eventos (direita)
         JsonArray ev = d.getAsJsonArray("events");
         int ew = 180, ex = w - ew - 4;

@@ -31,6 +31,10 @@ public enum ActionType {
     PATROL(Permission.ASSIGN_WORK, true, List.of("npc"), "npc"),
     GUARD(Permission.ASSIGN_WORK, true, List.of("npc"), "npc"),
     TALK(Permission.TALK, true, List.of(), "npc?, text?"),
+    CHAIN(Permission.ASSIGN_WORK, true, List.of(),
+            "template (minerar_ferreiro|plantar_colher|lenha|pedra|escrever|ler|carta) OU steps (lista JSON de etapas); npc? (quem adota a rotina), "
+                    + "repeat? (true = daqui em diante), amount?, forge? (true = forjar espadas), topic?, title?, to?, text?, name?"),
+    STOP_CHAIN(Permission.ASSIGN_WORK, true, List.of(), "chain? (número) | npc? (para a rotina dessa pessoa)"),
 
     // Previstas na arquitetura, chegam em fases futuras
     MOVE(Permission.WORK, false, List.of(), ""),

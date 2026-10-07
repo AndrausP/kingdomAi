@@ -52,7 +52,8 @@ public final class CommandService {
 
     public static final List<String> SUBCOMMANDS = List.of(
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
-            "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals");
+            "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
+            "chains", "chain", "books", "book");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -183,6 +184,10 @@ public final class CommandService {
             }
             case "debug" -> debug(k, a, out);
             case "replay" -> replay(k, rest(a, 1), out);
+            case "chains", "cadeias", "rotinas" -> chains(k, out);
+            case "chain", "cadeia", "rotina" -> chain(k, player, a, out);
+            case "books", "livros", "biblioteca" -> books(k, out);
+            case "book", "livro" -> book(k, rest(a, 1), out);
             case "rivals" -> {
                 int n = spawnRivals(k, a.length > 1 ? parseInt(a[1], 1) : 1);
                 out.add(n > 0 ? "✓ " + n + " reino(s) rival(is) fundado(s)." : "✗ Não foi possível criar rivais.");
@@ -209,9 +214,115 @@ public final class CommandService {
         out.add("economy · territory · claim [n] · tax <0-4|up|down> · law <conscription|migration> <on|off>");
         out.add("diplomacy list · diplomacy treaty <reino> <tipo> · diplomacy trade <reino> <qtd> <recurso> <qtd> <recurso>");
         out.add("diplomacy gift <reino> <qtd> <recurso> · war declare|peace <reino>");
+        out.add("chains · chain <nº> [stop|resume] · chain new <modelo> [npc=Nome] [k=v...] — rotinas/cadeias de trabalho");
+        out.add("  modelos: minerar_ferreiro, plantar_colher, lenha, pedra, escrever topic=..., ler, carta to=Nome text=...");
+        out.add("books · book <nº> — livros e cartas do reino");
         out.add("order <texto livre> · ai explain · ai ask <pergunta> · ai status");
         out.add("debug npc <nome> · debug ai [reino] · debug events · replay <nome> · rivals [n]");
         out.add("Tecla M: Manager Mode. Exemplo: /k order construam 2 casas e recrutem 3 soldados");
+    }
+
+    // ------------------------------------------------------------------ cadeias de trabalho, livros e cartas
+
+    private void chains(Kingdom k, List<String> out) {
+        List<com.kingdomsai.core.work.WorkChain> list = core.work().chains(k.id);
+        out.add("# Cadeias de trabalho de " + k.name);
+        if (list.isEmpty()) {
+            out.add("Nenhuma. Fale com um súdito (\"minere ferro e leve ao ferreiro\") ou use /k chain new <modelo>.");
+            return;
+        }
+        for (var c : list) {
+            if (!c.live() && c.createdTick < core.tick() - 24000L * 3) continue;
+            StringBuilder who = new StringBuilder();
+            for (var r : c.roles.values()) {
+                Npc n = core.npc(r.npcId);
+                if (n != null) who.append(who.length() == 0 ? "" : ", ").append(n.name).append(c.live() ? " " + r.state.display : "");
+            }
+            String head = (c.status == com.kingdomsai.core.work.WorkChain.Status.BROKEN ? "⚠ " : "") + "#" + c.number + " «" + c.name + "» — "
+                    + c.status.display + " · ciclos " + c.cycles + " · " + who;
+            out.add(c.status == com.kingdomsai.core.work.WorkChain.Status.BROKEN ? head + " · " + c.brokenReason : head);
+        }
+        out.add("Detalhes: /k chain <nº>");
+    }
+
+    private void chain(Kingdom k, UUID player, String[] a, List<String> out) {
+        if (a.length < 2) {
+            out.add("Uso: chain <nº> [stop|resume] · chain new <modelo> [npc=Nome] [amount=8] [forge=true] [topic=...] [to=Nome] [text=...]");
+            return;
+        }
+        if (a[1].equalsIgnoreCase("new") || a[1].equalsIgnoreCase("nova")) {
+            if (a.length < 3) {
+                out.add("Modelos:");
+                com.kingdomsai.core.work.ChainTemplates.TEMPLATES.forEach((id, d) -> out.add("  " + id + " — " + d));
+                return;
+            }
+            List<String> kv = new ArrayList<>(List.of("template", a[2]));
+            StringBuilder free = new StringBuilder();
+            String lastKey = null;
+            for (int i = 3; i < a.length; i++) {
+                int eq = a[i].indexOf('=');
+                if (eq > 0) {
+                    lastKey = a[i].substring(0, eq).toLowerCase(Locale.ROOT);
+                    kv.add(lastKey);
+                    kv.add(a[i].substring(eq + 1));
+                } else if (lastKey != null) {
+                    // valores com espaço: text=a colheita foi boa
+                    int idx = kv.size() - 1;
+                    kv.set(idx, kv.get(idx) + " " + a[i]);
+                } else free.append(a[i]).append(' ');
+            }
+            if (free.length() > 0 && !kv.contains("npc")) {
+                kv.add("npc");
+                kv.add(free.toString().trim());
+            }
+            act(k, player, ActionType.CHAIN, out, kv.toArray(new String[0]));
+            return;
+        }
+        var c = core.work().find(k.id, a[1]);
+        if (c == null) {
+            out.add("✗ Cadeia não encontrada: " + a[1] + ". Veja /k chains.");
+            return;
+        }
+        String op = a.length > 2 ? a[2].toLowerCase(Locale.ROOT) : "show";
+        switch (op) {
+            case "stop", "parar", "encerrar" -> act(k, player, ActionType.STOP_CHAIN, out, "chain", String.valueOf(c.number));
+            case "resume", "retomar" -> out.add((c.status == com.kingdomsai.core.work.WorkChain.Status.ACTIVE ? "✓ " : "⚠ ") + core.work().resume(c));
+            default -> out.addAll(core.work().describe(c));
+        }
+    }
+
+    private List<com.kingdomsai.core.work.Document> documents(Kingdom k) {
+        List<com.kingdomsai.core.work.Document> list = new ArrayList<>();
+        for (var d : core.state().documents.values()) if (k.id.equals(d.kingdomId)) list.add(d);
+        list.sort(Comparator.comparingLong(d -> d.tick));
+        return list;
+    }
+
+    private void books(Kingdom k, List<String> out) {
+        List<com.kingdomsai.core.work.Document> list = documents(k);
+        out.add("# Biblioteca e cartas de " + k.name);
+        if (list.isEmpty()) out.add("Nenhum livro ainda. Construa uma biblioteca e peça a um estudioso: \"escreva um livro sobre o reino\".");
+        for (int i = 0; i < list.size(); i++) {
+            var d = list.get(i);
+            Npc to = core.npc(d.recipientId);
+            out.add((i + 1) + ". " + (d.kind == com.kingdomsai.core.work.Document.Kind.BOOK ? "📖 " : "✉ ") + "«" + d.title + "» — " + d.authorName
+                    + (d.kind == com.kingdomsai.core.work.Document.Kind.BOOK ? " · lido por " + d.readers.size()
+                    : " · " + (d.delivered ? "entregue a " : "a caminho de ") + (to == null ? "?" : to.name)));
+        }
+    }
+
+    private void book(Kingdom k, String ref, List<String> out) {
+        List<com.kingdomsai.core.work.Document> list = documents(k);
+        com.kingdomsai.core.work.Document d = null;
+        int n = parseInt(ref.trim(), -1);
+        if (n >= 1 && n <= list.size()) d = list.get(n - 1);
+        else for (var x : list) if (!ref.isBlank() && Text.norm(x.title).contains(Text.norm(ref))) d = x;
+        if (d == null) {
+            out.add("✗ Livro não encontrado. Veja /k books.");
+            return;
+        }
+        out.add("# " + d.title);
+        for (String line : d.text.split("\n")) out.add(line.isBlank() ? " " : line);
     }
 
     private void found(UUID player, String playerName, Pos pos, String name, List<String> out) {
@@ -572,7 +683,9 @@ public final class CommandService {
 
     private void act(Kingdom k, UUID player, ActionType type, List<String> out, String... kv) {
         ActionResult r = core.actions().execute(ActionRequest.of(k.id, player, ActionRequest.ActorKind.PLAYER, type, ActionRequest.Source.CLI, kv));
-        out.add(r.ok() ? "✓ " + r.message() : "✗ [" + r.code() + "] " + r.message());
+        String[] parts = (r.message() == null ? "" : r.message()).split("\n");
+        out.add(r.ok() ? "✓ " + parts[0] : "✗ [" + r.code() + "] " + parts[0]);
+        for (int i = 1; i < parts.length; i++) out.add(parts[i]);
     }
 
     public ActionResult managerAction(UUID player, ActionType type, String... kv) {

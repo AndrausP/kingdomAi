@@ -47,6 +47,18 @@ public final class Npc {
 
     public transient boolean materialized;
 
+    // --- cadeias de trabalho (core/work)
+    /** Cadeia que este NPC cumpre como rotina; null = rotina da profissão. */
+    public UUID dutyChainId;
+    /** O que o NPC leva na mão entre uma etapa e outra. */
+    public Map<com.kingdomsai.core.work.Item, Integer> carrying = new EnumMap<>(com.kingdomsai.core.work.Item.class);
+    /** Ferramenta/item a mostrar na mão (o adaptador traduz: pickaxe, hoe, book, raw_iron...). */
+    public String heldItem = "";
+    /** Aprendeu a ler (lendo ou escrevendo livros). */
+    public boolean literate;
+    /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */
+    public transient boolean onDuty;
+
     public Npc() {}
 
     public int trait(Trait t) {

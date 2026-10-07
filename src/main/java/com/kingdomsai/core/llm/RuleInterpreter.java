@@ -36,8 +36,18 @@ public final class RuleInterpreter {
         List<Plan.PlannedAction> acts = new ArrayList<>();
         String reply = null;
 
+        // --- rotinas / cadeias de trabalho ("minere ferro e leve ao ferreiro", "plante e colha", "escreva um livro")
+        Map<String, String> chain = chainOrder(k, speaker, t, text);
+        if (chain != null) acts.add(new Plan.PlannedAction(ActionType.CHAIN, "CHAIN", chain));
+        else if (t.matches(".*\\b(pare|parar|para de|chega de|largue|abandone|stop)\\b.*")
+                && t.matches(".*\\b(rotina|tarefa|cadeia|isso|trabalho|de minerar|de plantar|de escrever|de ler|de cortar)\\b.*")) {
+            Npc who = npcMentioned(k, t, null);
+            if (who == null && speaker != null && speaker.office != Office.ADVISOR) who = speaker;
+            if (who != null) acts.add(new Plan.PlannedAction(ActionType.STOP_CHAIN, "STOP_CHAIN", params("npc", who.name)));
+        }
+
         // --- construção
-        if (t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
+        if (chain == null && t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
             Map<String, String> custom = customSpec(t);
             Blueprint bp = custom != null ? null : findBlueprint(t);
             if (custom != null && !t.contains("espada") && !t.contains("arma")) {
@@ -144,6 +154,8 @@ public final class RuleInterpreter {
         Matcher prod = Pattern.compile("(\\d+)\\s+(espadas|armas|swords|weapons)").matcher(t);
         if (prod.find()) reply = productionAnswer(k, speaker, Integer.parseInt(prod.group(1)));
 
+        if (reply == null && chain != null && speaker != null && speaker.office != Office.ADVISOR)
+            reply = acknowledge(speaker) + " " + chainPromise(chain);
         if (reply == null) {
             if (!acts.isEmpty()) reply = acknowledge(speaker);
             else if (speaker != null && speaker.office != Office.ADVISOR && !looksLikeQuestion(t)) reply = chat(k, speaker, t);
@@ -153,6 +165,82 @@ public final class RuleInterpreter {
     }
 
     // ------------------------------------------------------------------ respostas
+
+    /**
+     * Reconhece ordens de rotina e escolhe o modelo de cadeia. Quem executa: o NPC com quem o rei fala
+     * (se não for o conselheiro) ou alguém citado pelo nome; senão o modelo escolhe pela profissão.
+     */
+    private Map<String, String> chainOrder(Kingdom k, Npc speaker, String t, String original) {
+        boolean mine = t.matches(".*\\b(miner|minere|mina|minar|cave|cavar|extrai|extraia|extrair)\\w*.*");
+        boolean smith = t.matches(".*\\b(ferreiro|forja|ferraria|derret|fund[ae]|fundir|fornalha)\\w*.*");
+        String template = null;
+        if ((mine && smith) || (smith && t.contains("ferro") && t.matches(".*\\b(derret|fund|fundir)\\w*.*"))) template = "minerar_ferreiro";
+        else if (t.matches(".*\\b(plant|semei|semear|plante)\\w*.*") && t.matches(".*\\b(colh)\\w*.*")) template = "plantar_colher";
+        else if (t.matches(".*\\b(escrev)\\w*.*") && t.contains("carta")) template = "carta";
+        else if (t.matches(".*\\b(escrev)\\w*.*") && t.matches(".*\\b(livro|cronica|historia|tratado|registro)\\w*.*")) template = "escrever";
+        else if (t.matches(".*\\b(mande|envie|leve)\\b.*") && t.matches(".*\\buma carta\\b.*")) template = "carta";
+        else if (t.matches(".*\\b(leia|ler|leitura|estude|estudar)\\b.*") && t.matches(".*\\b(livro|livros|biblioteca)\\b.*")) template = "ler";
+        else if (t.matches(".*\\b(cort|derrub)\\w*.*") && t.matches(".*\\b(lenha|arvore|arvores|madeira|toras)\\b.*")) template = "lenha";
+        else if (mine && t.contains("pedra") && !t.contains("ferro")) template = "pedra";
+        if (template == null) return null;
+
+        Map<String, String> p = params("template", template);
+        Npc who = speaker != null && speaker.office != Office.ADVISOR ? speaker : null;
+        Npc named = npcMentioned(k, t, who);
+        switch (template) {
+            case "carta" -> {
+                Npc to = named;
+                if (to == null) {
+                    for (Npc o : core.allAlive())
+                        if (who == null || !o.id.equals(who.id))
+                            if (Pattern.compile("\\b" + Pattern.quote(Text.norm(o.name)) + "\\b").matcher(t).find()) to = o;
+                }
+                if (to == null) return null;
+                p.put("to", to.name);
+                Matcher m = Pattern.compile("(?i)(dizendo que|dizendo|falando que|contando que|avisando que|:)\\s*(.+)$").matcher(original);
+                if (m.find()) p.put("text", m.group(2).trim());
+                else {
+                    Matcher sobre = Pattern.compile("(?i)sobre\\s+(.+)$").matcher(original);
+                    if (sobre.find()) p.put("topic", sobre.group(1).trim());
+                }
+            }
+            case "escrever" -> {
+                Matcher sobre = Pattern.compile("(?i)sobre\\s+(.+)$").matcher(original);
+                if (sobre.find()) p.put("topic", sobre.group(1).replaceAll("[.!?]+$", "").trim());
+                if (who == null && named != null) who = named;
+            }
+            case "ler" -> {
+                Matcher q = Pattern.compile("[«\"“]([^»\"”]+)[»\"”]").matcher(original);
+                if (q.find()) p.put("title", q.group(1));
+                if (who == null && named != null) who = named;
+            }
+            default -> {
+                if (who == null && named != null) who = named;
+                Matcher amt = Pattern.compile("(\\d+)\\s+(?:de\\s+)?(ferro|minerio|toras|lenha|pedras?|madeira)").matcher(t);
+                if (amt.find()) p.put("amount", amt.group(1));
+                if (template.equals("minerar_ferreiro") && t.matches(".*\\b(espada|espadas|arma|armas)\\b.*")) p.put("forge", "true");
+            }
+        }
+        if (who != null) p.put("npc", who.name);
+        if (t.matches(".*\\b(so uma vez|uma vez so|apenas uma vez|uma unica vez)\\b.*")) p.put("repeat", "false");
+        else if (t.matches(".*\\b(daqui pra frente|daqui para frente|dai pra frente|dali pra frente|dali para frente|sempre|todo dia|todos os dias|continu\\w*|rotina)\\b.*"))
+            p.put("repeat", "true");
+        return p;
+    }
+
+    private static String chainPromise(Map<String, String> chain) {
+        boolean once = "false".equals(chain.get("repeat"));
+        return switch (chain.get("template")) {
+            case "minerar_ferreiro" -> (once ? "Vou" : "Daqui em diante vou") + " cuidar do ferro: da mina à forja, e as barras vão para o armazém.";
+            case "plantar_colher" -> (once ? "Vou" : "Daqui em diante vou") + " plantar, esperar o trigo amadurecer, colher e guardar no armazém.";
+            case "lenha" -> (once ? "Vou" : "Daqui em diante vou") + " cortar lenha e levar ao armazém.";
+            case "pedra" -> (once ? "Vou" : "Daqui em diante vou") + " extrair pedra e levar ao armazém.";
+            case "escrever" -> "Vou à biblioteca escrever" + (chain.get("topic") == null ? " a crônica do reino." : " sobre " + chain.get("topic") + ".");
+            case "ler" -> "Vou à biblioteca ler.";
+            case "carta" -> "Escreverei a carta para " + chain.get("to") + " e a entregarei em mãos.";
+            default -> "";
+        };
+    }
 
     private String acknowledge(Npc speaker) {
         if (speaker == null) return "Às suas ordens, Majestade.";
@@ -282,7 +370,7 @@ public final class RuleInterpreter {
     }
 
     private int bpWordIndex(String t) {
-        String[] keys = {"casa", "fazend", "quartel", "forja", "armaz", "salao", "house", "farm", "barrack", "celeiro", "prefeit"};
+        String[] keys = {"casa", "fazend", "quartel", "forja", "armaz", "salao", "bibliot", "house", "farm", "barrack", "celeiro", "prefeit", "library"};
         int best = -1;
         for (String key : keys) {
             int i = t.indexOf(key);
