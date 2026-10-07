@@ -440,6 +440,11 @@ public class ManagerScreen extends Screen {
             onClose();
             ClientHooks.openChat("/k npc talk " + first + " ");
         }, GOOD));
+        y += 18;
+        addRenderableWidget(new FlatButton(x0, y, bw, 14, Component.literal("📣 Chamar"), b -> send("call " + first), BLUE));
+        addRenderableWidget(new FlatButton(x0 + bw + 2, y, bw, 14, Component.literal("👣 Seguir-me"), b -> send("follow " + first), BLUE));
+        y += 15;
+        addRenderableWidget(new FlatButton(x0, y, bw * 2 + 2, 14, Component.literal("✋ Dispensar"), b -> send("dismiss " + first), WARN));
     }
 
     private void btn(String label, String command, int x, int y, int w, int accent) {

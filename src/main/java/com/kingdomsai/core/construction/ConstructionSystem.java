@@ -43,6 +43,22 @@ public final class ConstructionSystem {
             int sy = core.world().surfaceY(origin.x() + bp.sizeX() / 2, origin.z() + bp.sizeZ() / 2);
             if (sy != Integer.MIN_VALUE) y = sy;
         }
+        return create(k, bp, new Pos(origin.x(), y, origin.z()));
+    }
+
+    /**
+     * Muralha da vila: o lugar é a própria vila (não se procura terreno plano) e a altura de cada coluna
+     * já vem na planta, que acompanha o relevo. Recusa se cruzar alguma obra.
+     */
+    public Building planWall(Kingdom k, Blueprint wall) {
+        Pos origin = VillageWall.origin(core, k);
+        for (Building o : core.state().buildings.values())
+            if (o.status != Building.Status.ABANDONED && o.overlaps(origin, wall, 1)) return null;
+        return create(k, wall, origin);
+    }
+
+    private Building create(Kingdom k, Blueprint bp, Pos origin) {
+        int y = origin.y();
         Building b = new Building();
         b.id = UUID.randomUUID();
         b.kingdomId = k.id;

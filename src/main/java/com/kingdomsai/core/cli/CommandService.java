@@ -53,7 +53,7 @@ public final class CommandService {
     public static final List<String> SUBCOMMANDS = List.of(
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
             "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
-            "chains", "chain", "books", "book");
+            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -77,6 +77,7 @@ public final class CommandService {
 
     public List<String> execute(UUID player, String playerName, Pos playerPos, String line) {
         List<String> out = new ArrayList<>();
+        core.updatePlayerPos(player, playerPos);
         try {
             run(player, playerName, playerPos, line == null ? "" : line.trim(), out);
         } catch (RuntimeException e) {
@@ -184,6 +185,14 @@ public final class CommandService {
             }
             case "debug" -> debug(k, a, out);
             case "replay" -> replay(k, rest(a, 1), out);
+            case "call", "chamar", "chame" -> callNpc(k, player, a, ActionType.SUMMON, out);
+            case "follow", "seguir", "siga" -> callNpc(k, player, a, ActionType.FOLLOW, out);
+            case "dismiss", "dispensar" -> callNpc(k, player, a, ActionType.DISMISS, out);
+            case "village", "vila" -> {
+                out.add("# " + k.name);
+                out.add(com.kingdomsai.core.construction.VillageWall.describe(core, k));
+                out.add("Para cercar tudo: /k build muralha [height=3-6] · ou peça \"construa um muro ao redor da vila\".");
+            }
             case "chains", "cadeias", "rotinas" -> chains(k, out);
             case "chain", "cadeia", "rotina" -> chain(k, player, a, out);
             case "books", "livros", "biblioteca" -> books(k, out);
@@ -217,6 +226,8 @@ public final class CommandService {
         out.add("chains · chain <nº> [stop|resume] · chain new <modelo> [npc=Nome] [k=v...] — rotinas/cadeias de trabalho");
         out.add("  modelos: minerar_ferreiro, plantar_colher, lenha, pedra, escrever topic=..., ler, carta to=Nome text=...");
         out.add("books · book <nº> — livros e cartas do reino");
+        out.add("call [nome] · follow [nome] [minutos] · dismiss [nome] — chama até onde você está (no Manager: tecla G)");
+        out.add("village — tamanho da vila · build muralha [height=4] — muro sob medida ao redor da vila");
         out.add("order <texto livre> · ai explain · ai ask <pergunta> · ai status");
         out.add("debug npc <nome> · debug ai [reino] · debug events · replay <nome> · rivals [n]");
         out.add("Tecla M: Manager Mode. Exemplo: /k order construam 2 casas e recrutem 3 soldados");
@@ -289,6 +300,28 @@ public final class CommandService {
             case "resume", "retomar" -> out.add((c.status == com.kingdomsai.core.work.WorkChain.Status.ACTIVE ? "✓ " : "⚠ ") + core.work().resume(c));
             default -> out.addAll(core.work().describe(c));
         }
+    }
+
+    /** call/follow/dismiss: sem nome usa o súdito selecionado (clique no Manager ou botão direito). */
+    private void callNpc(Kingdom k, UUID player, String[] a, ActionType type, List<String> out) {
+        String name = null;
+        String minutes = null;
+        if (a.length > 1) {
+            if (type == ActionType.FOLLOW && a[a.length - 1].matches("\\d+")) {
+                minutes = a[a.length - 1];
+                name = a.length > 2 ? rest(Arrays.copyOf(a, a.length - 1), 1) : null;
+            } else name = rest(a, 1);
+        }
+        if (name == null || name.isBlank()) {
+            Npc sel = core.npc(selected(player));
+            if (sel == null) {
+                out.add("✗ Diga quem (ex.: /k call Aldren) ou selecione alguém no Manager.");
+                return;
+            }
+            name = sel.name;
+        }
+        if (minutes != null) act(k, player, type, out, "npc", name, "minutes", minutes);
+        else act(k, player, type, out, "npc", name);
     }
 
     private List<com.kingdomsai.core.work.Document> documents(Kingdom k) {

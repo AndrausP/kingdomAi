@@ -171,9 +171,11 @@ public final class WorkSystem {
         n.onDuty = true;
         n.heldItem = heldFor(n, s);
         n.currentTask = "⛓ " + c.name + ": " + s.describe() + progressText(r, s);
-        if (n.activity == NpcActivity.SLEEP || n.activity == NpcActivity.SOCIALIZE || n.activity == NpcActivity.TALKING) {
+        if (n.activity == NpcActivity.SLEEP || n.activity == NpcActivity.SOCIALIZE || n.activity == NpcActivity.TALKING
+                || n.activity == NpcActivity.SUMMONED) {
             r.state = WorkChain.DutyState.RESTING;
             r.status = n.activity.display;
+            if (n.activity == NpcActivity.SUMMONED) n.currentTask = "Atendendo ao rei (rotina «" + c.name + "» em pausa)";
             return;
         }
         Target t = target(c, k, s, n);

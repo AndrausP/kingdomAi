@@ -179,6 +179,11 @@ public final class CoreSelfTest {
         passed += work[0];
         failed += work[1];
 
+        // 11. Chamar NPC e muralha da vila
+        int[] ab = AbilitySelfTest.run();
+        passed += ab[0];
+        failed += ab[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

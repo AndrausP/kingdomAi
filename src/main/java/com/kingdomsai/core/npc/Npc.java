@@ -59,6 +59,13 @@ public final class Npc {
     /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */
     public transient boolean onDuty;
 
+    // --- chamado do rei (não é salvo: ao recarregar o mundo, cada um volta à rotina)
+    public transient Pos summonTarget;
+    public transient UUID summonedBy;
+    public transient long summonUntil;
+    public transient boolean following;
+    public transient boolean summonArrived;
+
     public Npc() {}
 
     public int trait(Trait t) {

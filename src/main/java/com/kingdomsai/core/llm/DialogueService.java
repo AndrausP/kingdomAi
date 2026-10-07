@@ -88,6 +88,10 @@ public final class DialogueService {
                     params.put("npc", listener.name);
                 params.putIfAbsent("order", Text.truncate(orderText, 120));
             }
+            var t = a.type();
+            if ((t == com.kingdomsai.core.action.ActionType.SUMMON || t == com.kingdomsai.core.action.ActionType.FOLLOW
+                    || t == com.kingdomsai.core.action.ActionType.DISMISS) && listener != null && params.get("npc") == null)
+                params.put("npc", listener.name);
             ActionResult r = core.actions().execute(new ActionRequest(kingdomId, playerId, ActionRequest.ActorKind.PLAYER,
                     a.type(), params, ActionRequest.Source.LLM));
             lines.addAll(resultLines(a.type().name(), r));

@@ -41,6 +41,8 @@ public final class KingdomsCore {
     private final EventBus bus;
     private final Random rng;
     private WorldPort world = WorldPort.NONE;
+    /** Última posição conhecida de cada jogador (adaptador e CLI atualizam) — para "venha aqui" e "me siga". */
+    private final Map<UUID, Pos> playerPositions = new HashMap<>();
     private java.util.concurrent.Executor mainThread = Runnable::run;
 
     private final ActionSystem actions;
@@ -279,6 +281,14 @@ public final class KingdomsCore {
 
     public long tick() {
         return state.tick;
+    }
+
+    public void updatePlayerPos(UUID player, Pos pos) {
+        if (player != null && pos != null) playerPositions.put(player, pos);
+    }
+
+    public Pos playerPos(UUID player) {
+        return player == null ? null : playerPositions.get(player);
     }
 
     public WorldPort world() {

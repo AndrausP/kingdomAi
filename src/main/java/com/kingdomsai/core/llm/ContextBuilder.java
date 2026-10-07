@@ -47,6 +47,8 @@ public final class ContextBuilder {
         sb.append("\nPlanta personalizada: BUILD com blueprint=custom e kind (casa, quartel, forja, armazem, salao, torre, capela, taverna), ")
                 .append("width/depth 5-15, floors 1-3, roof (plano|piramide|duas_aguas), wall e roof_material (")
                 .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false).");
+        sb.append("\nMuralha: BUILD com blueprint=muralha (height 3-6) — o jogo mede a vila (veja \"Vila:\" em WORLD DATA) e cerca tudo; não invente coordenadas.");
+        sb.append("\nChamar alguém até o rei: SUMMON(npc); acompanhar: FOLLOW(npc, minutes); dispensar: DISMISS(npc).");
         sb.append("\nPrazos: deadline=30s|5m|2h|1d|amanha (1 dia = 20 min de jogo). DEADLINE muda o prazo de uma obra existente.");
         sb.append("\nCADEIAS DE TRABALHO (CHAIN): rotinas que o NPC adota daqui em diante (repeat=true) ou tarefa única (repeat=false). ")
                 .append("Prefira um template; para algo diferente, mande steps como lista JSON ")
@@ -89,6 +91,9 @@ public final class ContextBuilder {
         if (npcKingdom != null) user.append("Local: ").append(core.scheduler() == null ? "" : sanitize(npcKingdom.name))
                 .append(", perto de ").append(npc.pos == null ? "?" : (int) npc.pos.distXZ(npcKingdom.center) + " blocos do centro").append(".\n");
         if (playerKingdom != null) for (String f : core.advisor().facts(playerKingdom)) user.append(f).append('\n');
+        if (npcKingdom != null) user.append(com.kingdomsai.core.construction.VillageWall.describe(core, npcKingdom)).append('\n');
+        if (playerKingdom != null && npc.pos != null && core.playerPos(playerKingdom.rulerPlayer) != null)
+            user.append("O rei está a ").append((int) npc.pos.distXZ(core.playerPos(playerKingdom.rulerPlayer))).append(" blocos de você.\n");
         if (!npc.relations.isEmpty()) {
             user.append("Relações: ");
             npc.relations.entrySet().stream()
@@ -114,6 +119,7 @@ public final class ContextBuilder {
                 + OUTPUT_RULES + actionCatalog();
         StringBuilder user = new StringBuilder("=== WORLD DATA ===\n");
         for (String f : core.advisor().facts(k)) user.append(f).append('\n');
+        user.append(com.kingdomsai.core.construction.VillageWall.describe(core, k)).append('\n');
         user.append("Pessoas: ");
         core.citizens(k.id).stream().limit(40).forEach(n -> user.append(n.name).append(" (").append(n.title()).append("), "));
         user.append('\n');

@@ -66,11 +66,25 @@ public final class Building {
 
     public boolean overlaps(Pos otherOrigin, Blueprint other, int margin) {
         Blueprint b = blueprint();
+        if (b == null) return false;
         int ax0 = origin.x() - margin, ax1 = origin.x() + b.sizeX() + margin;
         int az0 = origin.z() - margin, az1 = origin.z() + b.sizeZ() + margin;
         int bx0 = otherOrigin.x(), bx1 = otherOrigin.x() + other.sizeX();
         int bz0 = otherOrigin.z(), bz1 = otherOrigin.z() + other.sizeZ();
-        return ax0 < bx1 && bx0 < ax1 && az0 < bz1 && bz0 < az1;
+        if (!(ax0 < bx1 && bx0 < ax1 && az0 < bz1 && bz0 < az1)) return false;
+        // Muralha é um anel: o que fica inteiro do lado de dentro não colide com ela.
+        boolean thisRing = VillageWall.isWall(b), otherRing = VillageWall.isWall(other);
+        if (thisRing && !otherRing) return !inside(origin, b, bx0, bz0, bx1, bz1, margin);
+        if (otherRing && !thisRing)
+            return !inside(otherOrigin, other, origin.x(), origin.z(), origin.x() + b.sizeX(), origin.z() + b.sizeZ(), margin);
+        return true;
+    }
+
+    /** O retângulo [x0,x1)×[z0,z1) cabe no miolo do anel (com folga)? */
+    private static boolean inside(Pos ringOrigin, Blueprint ring, int x0, int z0, int x1, int z1, int margin) {
+        int ix0 = ringOrigin.x() + 1 + margin, iz0 = ringOrigin.z() + 1 + margin;
+        int ix1 = ringOrigin.x() + ring.sizeX() - 1 - margin, iz1 = ringOrigin.z() + ring.sizeZ() - 1 - margin;
+        return x0 >= ix0 && z0 >= iz0 && x1 <= ix1 && z1 <= iz1;
     }
 
     public boolean hasBuilder(UUID npc) {

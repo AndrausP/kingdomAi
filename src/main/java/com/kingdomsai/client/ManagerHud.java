@@ -175,7 +175,7 @@ public final class ManagerHud {
     }
 
     private static void hints(GuiGraphics g, Font font, int w, int h) {
-        String s = "[WASD/Espaço/Shift] voar   [Roda] velocidade   [Alt] interface   [Clique] selecionar   [Botão direito] falar   [M] voltar ao corpo";
+        String s = "[WASD/Espaço/Shift] voar   [Roda] velocidade   [Alt] interface   [Clique] selecionar   [Botão direito] falar   [G] chamar   [M] voltar ao corpo";
         int tw = Math.min(w - 8, font.width(s) + 12);
         panel(g, w / 2 - tw / 2, h - 16, w / 2 + tw / 2, h - 2);
         g.drawCenteredString(font, font.plainSubstrByWidth(s, tw - 8), w / 2, h - 13, DIM);

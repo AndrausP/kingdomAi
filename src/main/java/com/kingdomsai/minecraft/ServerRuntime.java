@@ -137,9 +137,16 @@ public final class ServerRuntime {
             // Um bug na simulação nunca deve derrubar o servidor.
             if (ticks % 200 == 0 || ticks < 40) KingdomsMod.LOG.error("[KingdomsAI] erro na simulação", e);
         }
+        if (ticks % 20 == 0) trackPlayers();
         if (ticks % 40 == 0) refreshManagers();
         if (ticks % 20 == 0) autoFound();
         if (ticks % (20 * 60 * 5) == 0) save();
+    }
+
+    /** O Core sabe onde cada rei está ("venha aqui", "me siga"). No Manager é a posição da câmera. */
+    private void trackPlayers() {
+        for (ServerPlayer p : server.getPlayerList().getPlayers())
+            if (p.level() == overworld) core.updatePlayerPos(p.getUUID(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()));
     }
 
     public void save() {
@@ -230,7 +237,8 @@ public final class ServerRuntime {
         if (k == null || k.rulerPlayer == null) return;
         boolean important = e.severity() != GameEvent.Severity.INFO
                 || e.type() == EventType.BORDER_CONTACT || e.type() == EventType.NPC_BECAME_IMPORTANT
-                || e.type() == EventType.BUILDING_STARTED;
+                || e.type() == EventType.BUILDING_STARTED || e.type() == EventType.NPC_ARRIVED
+                || e.type() == EventType.CHAIN_STARTED || e.type() == EventType.DOCUMENT_WRITTEN || e.type() == EventType.LETTER_DELIVERED;
         if (!important || e.type() == EventType.PLAYER_ORDER || e.type() == EventType.KINGDOM_FOUNDED) return;
         ServerPlayer p = server.getPlayerList().getPlayer(k.rulerPlayer);
         if (p != null) p.sendSystemMessage(ChatFormat.prefixed(e.icon() + " " + e.message()));

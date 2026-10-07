@@ -44,6 +44,12 @@ Fale com um súdito (botão direito → chat) e ele **adota a rotina daqui em di
 - Comandos: `chains` · `chain <nº>` (etapas, quem está onde, baús, histórico) · `chain <nº> stop|resume` · `chain new minerar_ferreiro npc=Nome forge=true` · `books` · `book <nº>`.
 - No Manager, o painel **ROTINAS** mostra cada cadeia (⛓ ativa / ⚠ quebrada) e o que cada pessoa está fazendo; o NPC segura a ferramenta ou o item da etapa (picareta, minério, barra, livro, carta).
 
+### Chamar súditos e o tamanho da vila
+
+- **Chamar**: mire num súdito (ou selecione no Manager) e aperte **G** — ele larga o que faz (a rotina fica em pausa, nada quebra) e vem até onde você está, inclusive embaixo da câmera do Manager. Também: botões 📣 Chamar / 👣 Seguir-me / ✋ Dispensar na ficha, `/k call|follow|dismiss <nome>`, ou no chat: *"venha aqui"*, *"me siga"*, *"pode ir"*. Chamado vale até de noite; mais de 400 blocos é longe demais.
+- **A vila tem tamanho**: o jogo mede a área ocupada pelas construções (+5 de folga). `/k village` mostra; a IA recebe essa medida e os guardas patrulham a borda.
+- *"Construa um muro ao redor da vila"* (ou `/k build muralha height=5`): muralha de pedra **sob medida**, que acompanha o relevo, com 2 portões, ameias, torres e tochas. É um anel — dá para continuar construindo dentro. Sem pedra suficiente, o jogo diz quanto falta.
+
 ### Construção
 
 Os construtores ficam **parados no canteiro batendo** e a obra sobe bloco a bloco (de baixo para cima). Longe dos jogadores a obra avança de forma abstrata e é materializada quando alguém chega.

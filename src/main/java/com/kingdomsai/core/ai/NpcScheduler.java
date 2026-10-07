@@ -4,6 +4,8 @@ import com.kingdomsai.core.KingdomsCore;
 import com.kingdomsai.core.common.Pos;
 import com.kingdomsai.core.common.Text;
 import com.kingdomsai.core.construction.Building;
+import com.kingdomsai.core.event.EventType;
+import com.kingdomsai.core.event.GameEvent;
 import com.kingdomsai.core.kingdom.Kingdom;
 import com.kingdomsai.core.npc.Npc;
 import com.kingdomsai.core.npc.NpcActivity;
@@ -21,15 +23,55 @@ public final class NpcScheduler {
         this.core = core;
     }
 
+    public static final int SUMMON_SECONDS = 180;
+    public static final int MAX_SUMMON_DISTANCE = 400;
+
+    /** O rei chama: o NPC larga o que faz (a rotina fica em pausa) e vai até ele; com follow, acompanha. */
+    public void summon(Npc n, java.util.UUID by, Pos target, boolean follow, int seconds) {
+        n.summonTarget = target;
+        n.summonedBy = by;
+        n.following = follow;
+        n.summonArrived = false;
+        n.summonUntil = core.tick() + 20L * Math.max(10, seconds);
+        n.currentTask = follow ? "Acompanhar o rei" : "Atender ao chamado do rei";
+    }
+
+    public void dismiss(Npc n) {
+        n.summonTarget = null;
+        n.summonedBy = null;
+        n.following = false;
+        n.summonArrived = false;
+    }
+
+    public boolean isSummoned(Npc n) {
+        return n.summonTarget != null && core.tick() < n.summonUntil;
+    }
+
     public void tickSecond() {
         long time = core.world().dayTime();
         for (Npc n : core.allAlive()) {
+            if (n.summonTarget != null) {
+                if (core.tick() >= n.summonUntil) {
+                    dismiss(n);
+                } else {
+                    if (n.following) {
+                        Pos p = core.playerPos(n.summonedBy);
+                        if (p != null) n.summonTarget = p;
+                    }
+                    if (!n.summonArrived && n.pos != null && n.pos.distXZ(n.summonTarget) <= 4) {
+                        n.summonArrived = true;
+                        if (!n.following) n.summonUntil = Math.max(n.summonUntil, core.tick() + 20L * 60); // espera 1 min por ordens
+                        core.bus().publish(core.tick(), EventType.NPC_ARRIVED, GameEvent.Severity.INFO, n.kingdomId, n.id,
+                                n.name + " chegou: \"" + (n.following ? "Vou com Vossa Majestade." : "Às suas ordens, Majestade.") + "\"");
+                    }
+                }
+            }
             Intent i = decide(n, time);
             if (n.activity != NpcActivity.TALKING) n.activity = i.activity();
             n.energy = Text.clamp(n.energy + (n.activity == NpcActivity.SLEEP ? 0.25 : -0.02), 0, 100);
             if (!n.materialized && i.target() != null && n.pos != null) {
                 // NPC abstrato: "teleporta" gradualmente para o destino (simulação agregada).
-                n.pos = moveTowards(n.pos, i.target(), 4);
+                n.pos = moveTowards(n.pos, i.target(), i.activity() == NpcActivity.SUMMONED ? 6 : 4);
             }
         }
     }
@@ -44,6 +86,8 @@ public final class NpcScheduler {
     public Intent decide(Npc n, long dayTime) {
         Kingdom k = core.kingdom(n.kingdomId);
         if (k == null) return new Intent(NpcActivity.IDLE, n.pos, 4);
+        // chamado do rei vem antes de tudo (até do sono)
+        if (isSummoned(n)) return new Intent(NpcActivity.SUMMONED, n.summonTarget, n.following ? 3 : 2);
         boolean night = dayTime >= 12600 && dayTime < 23400;
         boolean evening = dayTime >= 11000 && dayTime < 12600;
         int h = Math.abs(n.id.hashCode());
@@ -90,11 +134,14 @@ public final class NpcScheduler {
                 yield new Intent(NpcActivity.WORK, smithy != null ? smithy.centerPos() : k.center.offset(-5, 0, -5), 2);
             }
             case GUARD -> {
-                n.currentTask = "Patrulhar o reino";
+                // a ronda segue a borda da vila (ou o pé da muralha, se houver)
+                var vb = com.kingdomsai.core.construction.VillageWall.bounds(core, k);
+                boolean walled = com.kingdomsai.core.construction.VillageWall.existing(core, k) != null;
+                n.currentTask = walled ? "Patrulhar a muralha" : "Patrulhar a borda da vila";
                 long phase = (core.tick() / (20 * 40) + h) % 6;
                 double a = phase * Math.PI / 3;
-                int r = 22;
-                yield new Intent(NpcActivity.PATROL, k.center.offset((int) (Math.cos(a) * r), 0, (int) (Math.sin(a) * r)), 3);
+                int r = Math.max(14, vb.radius() - (walled ? 3 : 1));
+                yield new Intent(NpcActivity.PATROL, vb.center(k.center.y()).offset((int) (Math.cos(a) * r), 0, (int) (Math.sin(a) * r)), 3);
             }
             case SOLDIER -> {
                 Building barracks = nearest(k, "barracks", n.pos);

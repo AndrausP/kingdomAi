@@ -37,6 +37,12 @@ public final class Validators {
             case BUILD -> {
                 if (r.param("deadline") != null && com.kingdomsai.core.construction.ConstructionSystem.parseDuration(r.param("deadline")) < 0)
                     return ActionResult.reject("invalid_param", "Prazo inválido: " + r.param("deadline") + " (use 30s, 5m, 2h, 1d ou amanha).");
+                if (com.kingdomsai.core.construction.VillageWall.isWallRequest(r.param("blueprint"))) {
+                    int h = r.intParam("height", 4);
+                    if (h < 3 || h > 6) return ActionResult.reject("invalid_param", "A muralha tem de 3 a 6 blocos de altura.");
+                    if (amount != 1) return ActionResult.reject("invalid_param", "A vila só tem uma muralha.");
+                    return null;
+                }
                 if (isCustom(r)) {
                     try {
                         com.kingdomsai.core.construction.ParametricBlueprints.spec(r.params());
@@ -144,6 +150,12 @@ public final class Validators {
                     return ActionResult.reject("too_many_projects", "Já existem obras demais em andamento (máx. 8).");
                 if (r.param("for") != null && core.findNpc(k.id, r.param("for")) == null)
                     return ActionResult.reject("not_found", "Não encontrei " + r.param("for") + " no reino.");
+                if (com.kingdomsai.core.construction.VillageWall.isWallRequest(r.param("blueprint"))) {
+                    var existing = com.kingdomsai.core.construction.VillageWall.existing(core, k);
+                    if (existing != null)
+                        return ActionResult.reject("already_exists", "A vila já tem " + existing.blueprint().displayName().toLowerCase()
+                                + (existing.isComplete() ? "." : " em obra (" + (int) existing.percent() + "%)."));
+                }
             }
             case DEADLINE, CANCEL_BUILD -> {
                 if (ActionSystem.findProject(core, k, r.param("building")) == null)
@@ -177,6 +189,20 @@ public final class Validators {
                         com.kingdomsai.core.work.ChainTemplates.spec(r.params(), core, k));
                 if (!v.ok()) return ActionResult.reject("chain_invalid", "A cadeia não fecha: " + String.join(" ", v.errors()));
             }
+            case SUMMON, FOLLOW, DISMISS -> {
+                Npc n = core.findNpc(k.id, r.param("npc"));
+                if (n == null) return ActionResult.reject("not_found", "Não encontrei " + r.param("npc") + " em " + k.name + ".");
+                if (n.office == Office.KING) return ActionResult.reject("invalid_target", "O rei não é chamado: ele chama.");
+                if (r.type() == ActionType.DISMISS) {
+                    if (!core.scheduler().isSummoned(n)) return ActionResult.reject("invalid_target", n.name + " não foi chamado.");
+                    break;
+                }
+                com.kingdomsai.core.common.Pos to = summonTarget(core, r);
+                if (to == null) return ActionResult.reject("unknown_position", "Não sei onde Vossa Majestade está agora.");
+                if (n.pos != null && n.pos.distXZ(to) > com.kingdomsai.core.ai.NpcScheduler.MAX_SUMMON_DISTANCE)
+                    return ActionResult.reject("too_far", n.name + " está a " + (int) n.pos.distXZ(to) + " blocos — longe demais para atender ao chamado (máx. "
+                            + com.kingdomsai.core.ai.NpcScheduler.MAX_SUMMON_DISTANCE + ").");
+            }
             case STOP_CHAIN -> {
                 if (findChain(core, k, r) == null)
                     return ActionResult.reject("not_found", "Não encontrei essa cadeia" + (r.param("npc") != null ? " para " + r.param("npc") : "") + ". Veja /k chains.");
@@ -200,6 +226,20 @@ public final class Validators {
         }
         return null;
     };
+
+    /** Para onde o NPC vai: x/z explícitos ou a última posição conhecida do rei. */
+    public static com.kingdomsai.core.common.Pos summonTarget(KingdomsCore core, ActionRequest r) {
+        if (r.param("x") != null && r.param("z") != null) {
+            try {
+                int x = Integer.parseInt(r.param("x").trim()), z = Integer.parseInt(r.param("z").trim());
+                int y = r.param("y") == null ? core.world().surfaceY(x, z) : Integer.parseInt(r.param("y").trim());
+                return new com.kingdomsai.core.common.Pos(x, y == Integer.MIN_VALUE ? 64 : y, z);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return r.actorKind() == ActionRequest.ActorKind.PLAYER ? core.playerPos(r.actorId()) : null;
+    }
 
     public static com.kingdomsai.core.work.WorkChain findChain(KingdomsCore core, Kingdom k, ActionRequest r) {
         String ref = r.param("chain") != null ? r.param("chain") : r.param("npc");
@@ -226,6 +266,11 @@ public final class Validators {
         int amount = r.intParam("amount", 1);
         switch (r.type()) {
             case BUILD -> {
+                if (com.kingdomsai.core.construction.VillageWall.isWallRequest(r.param("blueprint"))) {
+                    Blueprint wall = com.kingdomsai.core.construction.VillageWall.generate(core, core.kingdom(r.kingdomId()), r.intParam("height", 4));
+                    c.putAll(wall.cost());
+                    break;
+                }
                 Blueprint bp = isCustom(r)
                         ? com.kingdomsai.core.construction.ParametricBlueprints.generate(com.kingdomsai.core.construction.ParametricBlueprints.spec(r.params()))
                         : BlueprintLibrary.find(r.param("blueprint"));

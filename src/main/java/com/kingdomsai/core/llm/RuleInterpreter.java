@@ -36,6 +36,23 @@ public final class RuleInterpreter {
         List<Plan.PlannedAction> acts = new ArrayList<>();
         String reply = null;
 
+        // --- chamar / seguir / dispensar ("venha aqui", "me siga", "pode ir")
+        Npc callee = npcMentioned(k, t, speaker != null && speaker.office == Office.ADVISOR ? speaker : null);
+        if (callee == null) callee = speaker;
+        String callReply = null;
+        if (t.matches(".*\\b(me siga|siga me|siga-me|venha comigo|me acompanhe|acompanhe me|follow me)\\b.*") && callee != null) {
+            acts.add(new Plan.PlannedAction(ActionType.FOLLOW, "FOLLOW", params("npc", callee.name)));
+            callReply = "Sigo Vossa Majestade aonde for.";
+        } else if (callee != null && (t.matches(".*\\b(venha aqui|vem aqui|vem ca|venha ca|venha ate mim|chegue aqui|aproxime se|aproxime-se|come here)\\b.*")
+                // "chame o Aldren" / "traga a Bruna aqui": só com alguém citado pelo nome
+                || (callee != speaker && t.matches(".*\\b(chame|chama|traga|traz|mande vir)\\b.*")))) {
+            acts.add(new Plan.PlannedAction(ActionType.SUMMON, "SUMMON", params("npc", callee.name)));
+            callReply = "Estou indo, Majestade!";
+        } else if (t.matches(".*\\b(pode ir|esta dispensad\\w*|dispensad\\w*|volte ao trabalho|pode voltar|dismissed)\\b.*") && callee != null) {
+            acts.add(new Plan.PlannedAction(ActionType.DISMISS, "DISMISS", params("npc", callee.name)));
+            callReply = "Com sua licença, Majestade. Volto ao trabalho.";
+        }
+
         // --- rotinas / cadeias de trabalho ("minere ferro e leve ao ferreiro", "plante e colha", "escreva um livro")
         Map<String, String> chain = chainOrder(k, speaker, t, text);
         if (chain != null) acts.add(new Plan.PlannedAction(ActionType.CHAIN, "CHAIN", chain));
@@ -46,8 +63,20 @@ public final class RuleInterpreter {
             if (who != null) acts.add(new Plan.PlannedAction(ActionType.STOP_CHAIN, "STOP_CHAIN", params("npc", who.name)));
         }
 
+        // --- muralha ao redor da vila (o jogo mede a vila)
+        boolean wall = chain == null && t.matches(".*\\b(muro|muros|muralha|muralhas|palicada|fortifiqu\\w*|cerque|cercar|wall)\\b.*")
+                && t.matches(".*\\b(constru|ergu|levant|faca|facam|crie|cerque|cercar|fortifiqu|build|quero)\\w*.*");
+        if (wall) {
+            Map<String, String> p = params("blueprint", "muralha");
+            if (t.matches(".*\\b(alt[oa]|grande|imponente)\\b.*")) p.put("height", "5");
+            else if (t.matches(".*\\b(baix[oa]|simples|pequen[oa])\\b.*")) p.put("height", "3");
+            String dl = deadlineIn(t);
+            if (dl != null) p.put("deadline", dl);
+            acts.add(new Plan.PlannedAction(ActionType.BUILD, "BUILD", p));
+        }
+
         // --- construção
-        if (chain == null && t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
+        if (chain == null && !wall && t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
             Map<String, String> custom = customSpec(t);
             Blueprint bp = custom != null ? null : findBlueprint(t);
             if (custom != null && !t.contains("espada") && !t.contains("arma")) {
@@ -154,6 +183,7 @@ public final class RuleInterpreter {
         Matcher prod = Pattern.compile("(\\d+)\\s+(espadas|armas|swords|weapons)").matcher(t);
         if (prod.find()) reply = productionAnswer(k, speaker, Integer.parseInt(prod.group(1)));
 
+        if (reply == null && callReply != null && speaker != null && callee == speaker) reply = callReply;
         if (reply == null && chain != null && speaker != null && speaker.office != Office.ADVISOR)
             reply = acknowledge(speaker) + " " + chainPromise(chain);
         if (reply == null) {
