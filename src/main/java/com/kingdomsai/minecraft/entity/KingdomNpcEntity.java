@@ -138,7 +138,12 @@ public class KingdomNpcEntity extends PathfinderMob {
             case "log" -> new ItemStack(Items.OAK_LOG);
             case "stone" -> new ItemStack(Items.COBBLESTONE);
             case "letter" -> new ItemStack(Items.PAPER);
-            default -> ItemStack.EMPTY;
+            default -> {
+                // ordens físicas mandam o id do item ("minecraft:iron_pickaxe")
+                net.minecraft.resources.ResourceLocation rl = n.heldItem != null && n.heldItem.contains(":")
+                        ? net.minecraft.resources.ResourceLocation.tryParse(n.heldItem) : null;
+                yield rl == null ? ItemStack.EMPTY : new ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl));
+            }
         };
         if (!duty.isEmpty()) return duty;
         if (n.office == Office.ADVISOR || n.office == Office.CHANCELLOR) return new ItemStack(Items.WRITABLE_BOOK);

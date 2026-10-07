@@ -111,13 +111,15 @@ public final class ManagerHud {
             for (int i = 0; i < rows; i++) {
                 JsonObject c = chains.get(i).getAsJsonObject();
                 boolean broken = c.get("broken").getAsBoolean();
-                String head = (broken ? "⚠ " : "⛓ ") + "#" + c.get("n").getAsInt() + " " + c.get("name").getAsString()
+                String name = c.get("name").getAsString();
+                boolean order = name.startsWith("⚒");
+                String head = (broken ? "⚠ " : order ? "⚒ " : "⛓ ") + "#" + c.get("n").getAsInt() + " " + (order ? name.substring(2) : name)
                         + (c.get("cycles").getAsInt() > 0 ? " ×" + c.get("cycles").getAsInt() : "");
-                g.drawString(font, font.plainSubstrByWidth(head, pw - 10), 9, ly, broken ? BAD : GOOD);
+                g.drawString(font, font.plainSubstrByWidth(head, pw - 10), 9, ly, broken ? BAD : order ? BLUE : GOOD);
                 ly += 10;
                 JsonArray roles = c.getAsJsonArray("roles");
                 if (broken) {
-                    g.drawString(font, font.plainSubstrByWidth("quebrou: " + c.get("reason").getAsString(), pw - 14), 13, ly, WARN);
+                    g.drawString(font, font.plainSubstrByWidth((order ? "esperando: " : "quebrou: ") + c.get("reason").getAsString(), pw - 14), 13, ly, WARN);
                     ly += 10;
                 } else for (int j = 0; j < Math.min(2, roles.size()); j++) {
                     g.drawString(font, font.plainSubstrByWidth(roles.get(j).getAsString(), pw - 14), 13, ly, DIM);

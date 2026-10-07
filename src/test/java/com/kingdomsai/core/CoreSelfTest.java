@@ -184,6 +184,11 @@ public final class CoreSelfTest {
         passed += ab[0];
         failed += ab[1];
 
+        // 12. Ordens com as mãos: quebrar, baús, fabricar
+        int[] sk = SkillSelfTest.run();
+        passed += sk[0];
+        failed += sk[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

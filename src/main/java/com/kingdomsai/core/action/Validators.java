@@ -92,6 +92,13 @@ public final class Validators {
                 if (r.intParam("amount", 0) < 1 || r.intParam("amount", 0) > 5000)
                     return ActionResult.reject("invalid_param", "Quantidade inválida.");
             }
+            case JOB -> {
+                try {
+                    com.kingdomsai.core.skill.JobPlanner.specs(r.params());
+                } catch (IllegalArgumentException e) {
+                    return ActionResult.reject("invalid_param", e.getMessage());
+                }
+            }
             case CHAIN -> {
                 try {
                     com.kingdomsai.core.work.ChainTemplates.spec(r.params(), core, core.kingdom(r.kingdomId()));
@@ -202,6 +209,14 @@ public final class Validators {
                 if (n.pos != null && n.pos.distXZ(to) > com.kingdomsai.core.ai.NpcScheduler.MAX_SUMMON_DISTANCE)
                     return ActionResult.reject("too_far", n.name + " está a " + (int) n.pos.distXZ(to) + " blocos — longe demais para atender ao chamado (máx. "
                             + com.kingdomsai.core.ai.NpcScheduler.MAX_SUMMON_DISTANCE + ").");
+            }
+            case JOB -> {
+                var plan = com.kingdomsai.core.skill.JobPlanner.plan(core, k, r.actorId(), r.params());
+                if (!plan.ok()) return ActionResult.reject("job_invalid", String.join(" ", plan.errors()));
+            }
+            case CANCEL_JOB -> {
+                var j = core.skills().find(k.id, r.param("job") != null ? r.param("job") : r.param("npc"));
+                if (j == null || !j.status.live()) return ActionResult.reject("not_found", "Não há ordem em andamento" + (r.param("npc") != null ? " para " + r.param("npc") : "") + ".");
             }
             case STOP_CHAIN -> {
                 if (findChain(core, k, r) == null)

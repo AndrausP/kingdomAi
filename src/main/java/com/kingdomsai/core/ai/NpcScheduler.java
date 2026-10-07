@@ -88,6 +88,9 @@ public final class NpcScheduler {
         if (k == null) return new Intent(NpcActivity.IDLE, n.pos, 4);
         // chamado do rei vem antes de tudo (até do sono)
         if (isSummoned(n)) return new Intent(NpcActivity.SUMMONED, n.summonTarget, n.following ? 3 : 2);
+        // ordem física direta (quebrar, baú, fabricar) também passa na frente do sono
+        Intent job = core.skills().intentFor(n);
+        if (job != null) return job;
         boolean night = dayTime >= 12600 && dayTime < 23400;
         boolean evening = dayTime >= 11000 && dayTime < 12600;
         int h = Math.abs(n.id.hashCode());

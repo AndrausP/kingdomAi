@@ -83,7 +83,8 @@ public final class DialogueService {
                 continue;
             }
             Map<String, String> params = new java.util.LinkedHashMap<>(a.params());
-            if (a.type() == com.kingdomsai.core.action.ActionType.CHAIN || a.type() == com.kingdomsai.core.action.ActionType.STOP_CHAIN) {
+            if (a.type() == com.kingdomsai.core.action.ActionType.CHAIN || a.type() == com.kingdomsai.core.action.ActionType.STOP_CHAIN
+                    || a.type() == com.kingdomsai.core.action.ActionType.JOB || a.type() == com.kingdomsai.core.action.ActionType.CANCEL_JOB) {
                 if (listener != null && listener.office != com.kingdomsai.core.npc.Office.ADVISOR && params.get("npc") == null && params.get("chain") == null)
                     params.put("npc", listener.name);
                 params.putIfAbsent("order", Text.truncate(orderText, 120));

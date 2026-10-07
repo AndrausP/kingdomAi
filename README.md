@@ -44,6 +44,10 @@ Fale com um súdito (botão direito → chat) e ele **adota a rotina daqui em di
 - Comandos: `chains` · `chain <nº>` (etapas, quem está onde, baús, histórico) · `chain <nº> stop|resume` · `chain new minerar_ferreiro npc=Nome forge=true` · `books` · `book <nº>`.
 - No Manager, o painel **ROTINAS** mostra cada cadeia (⛓ ativa / ⚠ quebrada) e o que cada pessoa está fazendo; o NPC segura a ferramenta ou o item da etapa (picareta, minério, barra, livro, carta).
 
+### Ordens com as mãos: quebrar, baús, fabricar
+
+Mire e fale: *"quebre esse bloco"*, *"cave um buraco 3x3x3 aqui"*, *"abra um túnel de 10 blocos"*, *"corte essa árvore"*, *"pegue 5 barras de ferro desse baú"*, *"guarde tudo no armazém"*, *"faça uma picareta de ferro e me entregue"*. Os itens são **reais** (saem do baú, caem dos blocos, a picareta vai para a sua mão). O súdito planeja sozinho o que falta (pega ferro no baú, faz tábuas → gravetos), respeita as receitas do Minecraft e nunca quebra construções, baús, terra de outro reino ou blocos colados em água/lava. Comandos: `jobs`, `job <nome> dig 3x3x3`, `job <nome> craft 4 tocha entregar`, `bag <nome>`. Regras completas e o que foi testado: [`docs/JOGABILIDADE.md`](docs/JOGABILIDADE.md).
+
 ### Chamar súditos e o tamanho da vila
 
 - **Chamar**: mire num súdito (ou selecione no Manager) e aperte **G** — ele larga o que faz (a rotina fica em pausa, nada quebra) e vem até onde você está, inclusive embaixo da câmera do Manager. Também: botões 📣 Chamar / 👣 Seguir-me / ✋ Dispensar na ficha, `/k call|follow|dismiss <nome>`, ou no chat: *"venha aqui"*, *"me siga"*, *"pode ir"*. Chamado vale até de noite; mais de 400 blocos é longe demais.

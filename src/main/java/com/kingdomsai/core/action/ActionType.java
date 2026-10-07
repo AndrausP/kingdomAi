@@ -35,6 +35,10 @@ public enum ActionType {
             "template (minerar_ferreiro|plantar_colher|lenha|pedra|escrever|ler|carta) OU steps (lista JSON de etapas); npc? (quem adota a rotina), "
                     + "repeat? (true = daqui em diante), amount?, forge? (true = forjar espadas), topic?, title?, to?, text?, name?"),
     STOP_CHAIN(Permission.ASSIGN_WORK, true, List.of(), "chain? (número) | npc? (para a rotina dessa pessoa)"),
+    JOB(Permission.ASSIGN_WORK, true, List.of(),
+            "npc?, kind (break|dig|tunnel|clear|chop|take|put|craft|give) OU tasks (lista JSON); size? (3x3x3), length?, item?, count?, "
+                    + "from?/to? (look=baú na mira do rei | storage=armazém | \"x y z\"), give? (true = entregar ao rei no fim)"),
+    CANCEL_JOB(Permission.ASSIGN_WORK, true, List.of(), "job? (número) | npc?"),
     SUMMON(Permission.TALK, true, List.of("npc"), "npc — a pessoa vem até onde o rei está (x?, z? para outro lugar)"),
     FOLLOW(Permission.TALK, true, List.of("npc"), "npc, minutes? (padrão 3) — a pessoa acompanha o rei"),
     DISMISS(Permission.TALK, true, List.of("npc"), "npc — dispensa quem foi chamado; volta à rotina"),

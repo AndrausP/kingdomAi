@@ -36,6 +36,9 @@ public final class WorldState {
     public int chainCounter;
     /** Livros e cartas (v2). */
     public Map<UUID, com.kingdomsai.core.work.Document> documents = new LinkedHashMap<>();
+    /** Ordens físicas: quebrar, baús, fabricar (v2). */
+    public Map<UUID, com.kingdomsai.core.skill.PhysicalJob> jobs = new LinkedHashMap<>();
+    public int jobCounter;
     public List<GameEvent> events = new ArrayList<>();
 
     public WorldState() {}

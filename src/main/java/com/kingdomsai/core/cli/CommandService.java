@@ -53,7 +53,7 @@ public final class CommandService {
     public static final List<String> SUBCOMMANDS = List.of(
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
             "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
-            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village");
+            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -193,6 +193,14 @@ public final class CommandService {
                 out.add(com.kingdomsai.core.construction.VillageWall.describe(core, k));
                 out.add("Para cercar tudo: /k build muralha [height=3-6] · ou peça \"construa um muro ao redor da vila\".");
             }
+            case "jobs", "ordens" -> jobs(k, out);
+            case "job", "tarefa" -> job(k, player, a, out);
+            case "bag", "mochila" -> {
+                Npc n = a.length > 1 ? core.findNpc(k.id, rest(a, 1)) : core.npc(selected(player));
+                if (n == null) out.add("✗ Uso: bag <nome> (ou selecione alguém).");
+                else out.add("Mochila de " + n.name + ": " + com.kingdomsai.core.skill.SkillSystem.summary(n.bag)
+                        + " (" + n.bag.values().stream().mapToInt(Integer::intValue).sum() + "/" + com.kingdomsai.core.skill.JobPlanner.BAG_CAPACITY + ")");
+            }
             case "chains", "cadeias", "rotinas" -> chains(k, out);
             case "chain", "cadeia", "rotina" -> chain(k, player, a, out);
             case "books", "livros", "biblioteca" -> books(k, out);
@@ -226,6 +234,8 @@ public final class CommandService {
         out.add("chains · chain <nº> [stop|resume] · chain new <modelo> [npc=Nome] [k=v...] — rotinas/cadeias de trabalho");
         out.add("  modelos: minerar_ferreiro, plantar_colher, lenha, pedra, escrever topic=..., ler, carta to=Nome text=...");
         out.add("books · book <nº> — livros e cartas do reino");
+        out.add("job <nome> break|dig [3x3x3]|tunnel [n]|clear [5x5]|chop — mire no bloco/árvore antes");
+        out.add("job <nome> take <qtd> <item> [armazem] · put [qtd item] · craft <qtd> <item> [entregar] · give · job cancel <nº> · jobs · bag <nome>");
         out.add("call [nome] · follow [nome] [minutos] · dismiss [nome] — chama até onde você está (no Manager: tecla G)");
         out.add("village — tamanho da vila · build muralha [height=4] — muro sob medida ao redor da vila");
         out.add("order <texto livre> · ai explain · ai ask <pergunta> · ai status");
@@ -300,6 +310,63 @@ public final class CommandService {
             case "resume", "retomar" -> out.add((c.status == com.kingdomsai.core.work.WorkChain.Status.ACTIVE ? "✓ " : "⚠ ") + core.work().resume(c));
             default -> out.addAll(core.work().describe(c));
         }
+    }
+
+    private void jobs(Kingdom k, List<String> out) {
+        out.add("# Ordens com as mãos — " + k.name);
+        var list = core.skills().jobs(k.id);
+        if (list.isEmpty()) out.add("Nenhuma. Mire num bloco e diga a um súdito: \"quebre esse bloco\", \"corte essa árvore\", \"faça 4 tochas\".");
+        for (var j : list) {
+            if (!j.status.live() && j.createdTick < core.tick() - 24000L) continue;
+            Npc n = core.npc(j.npcId);
+            out.add((j.status == com.kingdomsai.core.skill.PhysicalJob.Status.FAILED ? "⚠ " : "") + "#" + j.number + " " + (n == null ? "?" : n.name)
+                    + " — " + j.name + " · " + j.status.display + (j.reason.isBlank() ? "" : ": " + j.reason));
+        }
+    }
+
+    private void job(Kingdom k, UUID player, String[] a, List<String> out) {
+        if (a.length < 2) {
+            out.add("Uso: job <nome> <break|dig|tunnel|clear|chop|take|put|craft|give> ... · job <nº> · job cancel <nº|nome>");
+            return;
+        }
+        if (a[1].equalsIgnoreCase("cancel") || a[1].equalsIgnoreCase("cancelar")) {
+            act(k, player, ActionType.CANCEL_JOB, out, "job", a.length > 2 ? rest(a, 2) : "");
+            return;
+        }
+        if (a[1].matches("#?\\d+")) {
+            var j = core.skills().find(k.id, a[1]);
+            if (j == null) out.add("✗ Ordem não encontrada.");
+            else out.addAll(core.skills().describe(j));
+            return;
+        }
+        if (a.length < 3) {
+            out.add("✗ Diga o que fazer: job " + a[1] + " dig 3x3x3");
+            return;
+        }
+        List<String> kv = new ArrayList<>(List.of("npc", a[1], "kind", a[2]));
+        String kind = a[2].toLowerCase(Locale.ROOT);
+        List<String> rest = new ArrayList<>(Arrays.asList(a).subList(3, a.length));
+        for (Iterator<String> it = rest.iterator(); it.hasNext(); ) {
+            String w = it.next().toLowerCase(Locale.ROOT);
+            if (w.matches("entregar|entregue|give|pra-mim")) {
+                kv.addAll(List.of("give", "true"));
+                it.remove();
+            } else if (w.matches("armazem|armazém|storage")) {
+                kv.addAll(List.of(kind.startsWith("put") || kind.startsWith("guard") ? "to" : "from", "storage"));
+                it.remove();
+            } else if (w.matches("mira|look|esse")) {
+                kv.addAll(List.of(kind.startsWith("put") || kind.startsWith("guard") ? "to" : "from", "look"));
+                it.remove();
+            } else if (w.matches("\\d+x\\d+(x\\d+)?")) {
+                kv.addAll(List.of("size", w));
+                it.remove();
+            }
+        }
+        if (!rest.isEmpty() && rest.get(0).matches("\\d+")) {
+            kv.addAll(List.of(kind.startsWith("tun") ? "length" : "count", rest.remove(0)));
+        }
+        if (!rest.isEmpty()) kv.addAll(List.of("item", String.join(" ", rest)));
+        act(k, player, ActionType.JOB, out, kv.toArray(new String[0]));
     }
 
     /** call/follow/dismiss: sem nome usa o súdito selecionado (clique no Manager ou botão direito). */

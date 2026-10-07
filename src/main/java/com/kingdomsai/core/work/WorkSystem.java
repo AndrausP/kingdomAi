@@ -168,6 +168,11 @@ public final class WorkSystem {
         Npc n = core.npc(r.npcId);
         WorkChain.Step s = c.current(r);
         if (n == null || s == null) return;
+        if (n.jobId != null && core.state().jobs.containsKey(n.jobId) && core.state().jobs.get(n.jobId).status.live()) {
+            r.state = WorkChain.DutyState.RESTING;
+            r.status = "cumprindo uma ordem do rei";
+            return;
+        }
         n.onDuty = true;
         n.heldItem = heldFor(n, s);
         n.currentTask = "⛓ " + c.name + ": " + s.describe() + progressText(r, s);

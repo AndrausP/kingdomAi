@@ -54,6 +54,10 @@ public final class Npc {
     public Map<com.kingdomsai.core.work.Item, Integer> carrying = new EnumMap<>(com.kingdomsai.core.work.Item.class);
     /** Ferramenta/item a mostrar na mão (o adaptador traduz: pickaxe, hoe, book, raw_iron...). */
     public String heldItem = "";
+    /** Mochila de itens reais do Minecraft (ordens físicas): id → quantidade. */
+    public Map<String, Integer> bag = new TreeMap<>();
+    /** Ordem física em andamento (quebrar, baú, fabricar...). */
+    public UUID jobId;
     /** Aprendeu a ler (lendo ou escrevendo livros). */
     public boolean literate;
     /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */

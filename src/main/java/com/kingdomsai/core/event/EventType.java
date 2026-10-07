@@ -48,5 +48,8 @@ public enum EventType {
     BOOK_READ,
     LETTER_DELIVERED,
     NPC_SUMMONED,
-    NPC_ARRIVED
+    NPC_ARRIVED,
+    JOB_STARTED,
+    JOB_DONE,
+    JOB_FAILED
 }

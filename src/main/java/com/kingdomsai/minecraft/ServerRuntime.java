@@ -76,6 +76,7 @@ public final class ServerRuntime {
         this.core = new KingdomsCore(state, KingdomsConfig.core());
         this.port = new McWorldPort(overworld);
         core.setWorld(port);
+        core.setPhysical(new McPhysicalPort(overworld, materializer, server));
         core.setMainThread(mainQueue::add);
         core.llm().configure(KingdomsConfig.llm());
         this.cli = new CommandService(core);
@@ -145,8 +146,17 @@ public final class ServerRuntime {
 
     /** O Core sabe onde cada rei está ("venha aqui", "me siga"). No Manager é a posição da câmera. */
     private void trackPlayers() {
-        for (ServerPlayer p : server.getPlayerList().getPlayers())
-            if (p.level() == overworld) core.updatePlayerPos(p.getUUID(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()));
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) track(p);
+    }
+
+    /** Posição e mira do rei: "venha aqui", "quebre esse bloco", "pegue desse baú". */
+    private void track(ServerPlayer p) {
+        if (p.level() != overworld) return;
+        core.updatePlayerPos(p.getUUID(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()));
+        net.minecraft.world.phys.HitResult hit = p.pick(24, 1f, false);
+        Pos look = hit instanceof net.minecraft.world.phys.BlockHitResult bh && hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                ? new Pos(bh.getBlockPos().getX(), bh.getBlockPos().getY(), bh.getBlockPos().getZ()) : null;
+        core.updatePlayerLook(p.getUUID(), look, p.getDirection().getName());
     }
 
     public void save() {
@@ -188,6 +198,7 @@ public final class ServerRuntime {
     }
 
     public List<String> runCommand(ServerPlayer p, String line) {
+        track(p); // a mira de AGORA (o jogador acabou de mirar e digitar)
         Pos pos = new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ());
         return cli.execute(p.getUUID(), p.getGameProfile().getName(), pos, line);
     }
@@ -238,7 +249,8 @@ public final class ServerRuntime {
         boolean important = e.severity() != GameEvent.Severity.INFO
                 || e.type() == EventType.BORDER_CONTACT || e.type() == EventType.NPC_BECAME_IMPORTANT
                 || e.type() == EventType.BUILDING_STARTED || e.type() == EventType.NPC_ARRIVED
-                || e.type() == EventType.CHAIN_STARTED || e.type() == EventType.DOCUMENT_WRITTEN || e.type() == EventType.LETTER_DELIVERED;
+                || e.type() == EventType.CHAIN_STARTED || e.type() == EventType.DOCUMENT_WRITTEN || e.type() == EventType.LETTER_DELIVERED
+                || e.type() == EventType.JOB_DONE;
         if (!important || e.type() == EventType.PLAYER_ORDER || e.type() == EventType.KINGDOM_FOUNDED) return;
         ServerPlayer p = server.getPlayerList().getPlayer(k.rulerPlayer);
         if (p != null) p.sendSystemMessage(ChatFormat.prefixed(e.icon() + " " + e.message()));

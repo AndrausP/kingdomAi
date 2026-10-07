@@ -9,6 +9,7 @@ import com.kingdomsai.core.diplomacy.Diplomacy;
 import com.kingdomsai.core.kingdom.Kingdom;
 import com.kingdomsai.core.kingdom.ResourceType;
 import com.kingdomsai.core.npc.*;
+import com.kingdomsai.core.skill.ItemNames;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -53,18 +54,26 @@ public final class RuleInterpreter {
             callReply = "Com sua licença, Majestade. Volto ao trabalho.";
         }
 
+        // --- ordens físicas ("quebre esse bloco", "corte essa árvore", "pegue 3 ferro do baú", "faça uma picareta e me entregue")
+        Map<String, String> job = acts.isEmpty() ? physicalOrder(k, speaker, t, text) : null;
+        if (job != null) acts.add(new Plan.PlannedAction(ActionType.JOB, "JOB", job));
+
         // --- rotinas / cadeias de trabalho ("minere ferro e leve ao ferreiro", "plante e colha", "escreva um livro")
-        Map<String, String> chain = chainOrder(k, speaker, t, text);
+        Map<String, String> chain = job != null ? null : chainOrder(k, speaker, t, text);
         if (chain != null) acts.add(new Plan.PlannedAction(ActionType.CHAIN, "CHAIN", chain));
-        else if (t.matches(".*\\b(pare|parar|para de|chega de|largue|abandone|stop)\\b.*")
-                && t.matches(".*\\b(rotina|tarefa|cadeia|isso|trabalho|de minerar|de plantar|de escrever|de ler|de cortar)\\b.*")) {
+        else if (job == null && t.matches(".*\\b(pare|parar|para de|chega de|largue|abandone|cancele|stop)\\b.*")
+                && t.matches(".*\\b(rotina|tarefa|cadeia|isso|trabalho|ordem|de minerar|de plantar|de escrever|de ler|de cortar|de cavar|de quebrar)\\b.*")) {
             Npc who = npcMentioned(k, t, null);
             if (who == null && speaker != null && speaker.office != Office.ADVISOR) who = speaker;
-            if (who != null) acts.add(new Plan.PlannedAction(ActionType.STOP_CHAIN, "STOP_CHAIN", params("npc", who.name)));
+            if (who != null) {
+                boolean hasJob = who.jobId != null && core.state().jobs.containsKey(who.jobId) && core.state().jobs.get(who.jobId).status.live();
+                acts.add(hasJob ? new Plan.PlannedAction(ActionType.CANCEL_JOB, "CANCEL_JOB", params("npc", who.name))
+                        : new Plan.PlannedAction(ActionType.STOP_CHAIN, "STOP_CHAIN", params("npc", who.name)));
+            }
         }
 
         // --- muralha ao redor da vila (o jogo mede a vila)
-        boolean wall = chain == null && t.matches(".*\\b(muro|muros|muralha|muralhas|palicada|fortifiqu\\w*|cerque|cercar|wall)\\b.*")
+        boolean wall = chain == null && job == null && t.matches(".*\\b(muro|muros|muralha|muralhas|palicada|fortifiqu\\w*|cerque|cercar|wall)\\b.*")
                 && t.matches(".*\\b(constru|ergu|levant|faca|facam|crie|cerque|cercar|fortifiqu|build|quero)\\w*.*");
         if (wall) {
             Map<String, String> p = params("blueprint", "muralha");
@@ -76,7 +85,7 @@ public final class RuleInterpreter {
         }
 
         // --- construção
-        if (chain == null && !wall && t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
+        if (chain == null && job == null && !wall && t.matches(".*\\b(constru|ergu|levant|faca |facam |crie |criem |build|erect|mande construir).*")) {
             Map<String, String> custom = customSpec(t);
             Blueprint bp = custom != null ? null : findBlueprint(t);
             if (custom != null && !t.contains("espada") && !t.contains("arma")) {
@@ -184,6 +193,8 @@ public final class RuleInterpreter {
         if (prod.find()) reply = productionAnswer(k, speaker, Integer.parseInt(prod.group(1)));
 
         if (reply == null && callReply != null && speaker != null && callee == speaker) reply = callReply;
+        if (reply == null && job != null && speaker != null && speaker.office != Office.ADVISOR)
+            reply = acknowledge(speaker) + " Deixe comigo.";
         if (reply == null && chain != null && speaker != null && speaker.office != Office.ADVISOR)
             reply = acknowledge(speaker) + " " + chainPromise(chain);
         if (reply == null) {
@@ -195,6 +206,86 @@ public final class RuleInterpreter {
     }
 
     // ------------------------------------------------------------------ respostas
+
+    /**
+     * Ordens com as mãos. Lugares vêm da mira do rei ("esse bloco", "essa árvore", "desse baú");
+     * quem faz é o NPC com quem ele fala ou alguém citado pelo nome (senão o planejador escolhe).
+     */
+    private Map<String, String> physicalOrder(Kingdom k, Npc speaker, String t, String original) {
+        Map<String, String> p = null;
+        String here = "(esse|este|aquele|essa|esta|aquela|o|a|aqui|ali)";
+        if (t.matches(".*\\b(corte|corta|derrube|derruba|cortar)\\s+" + here + "\\s+arvore\\b.*"))
+            p = params("kind", "chop");
+        else if (t.matches(".*\\b(quebre|quebra|destrua|destroi|remova|tire)\\s+" + here + "\\s+bloco\\b.*"))
+            p = params("kind", "break");
+        else if (t.matches(".*\\b(tunel|galeria)\\b.*") && t.matches(".*\\b(abra|abre|cave|cava|escave|faca|cavar)\\w*.*")) {
+            p = params("kind", "tunnel");
+            Matcher m = Pattern.compile("(\\d+)\\s*blocos").matcher(t);
+            if (m.find()) p.put("length", m.group(1));
+        } else if (t.matches(".*\\b(cave|cava|escave|cavar|buraco|escavar)\\b.*") && !t.contains("ferro") && !t.contains("pedra")) {
+            p = params("kind", "dig");
+        } else if (t.matches(".*\\b(limpe|limpa|aplaine|aplana|limpar)\\s+" + here + "?\\s*(area|terreno|espaco|lugar)\\b.*")) {
+            p = params("kind", "clear");
+        }
+        if (p != null) {
+            Matcher sz = Pattern.compile("(\\d+)\\s*x\\s*(\\d+)(?:\\s*x\\s*(\\d+))?").matcher(t);
+            if (sz.find()) p.put("size", sz.group(1) + "x" + sz.group(2) + (sz.group(3) != null ? "x" + sz.group(3) : ""));
+        }
+        String give = ".*\\b(me (de|da|entregue|entrega|traga|traz)|e me (de|entregue|traga)|traga (pra|para) mim|para mim|pra mim|me passe)\\b.*";
+        if (p == null) {
+            Matcher m = Pattern.compile("\\b(pegue|pega|tire|retire|busque|pegar|traga)\\s+(?:(\\d+|um|uma|dois|duas|tres|cinco|dez)\\s+)?(.+?)\\s+(do|no|desse|deste|daquele|naquele|nesse|neste|dentro do)\\s+(bau|barril|armazem)\\b").matcher(t);
+            if (m.find() && ItemNames.resolve(m.group(3)) != null) {
+                p = params("kind", "take", "item", m.group(3).trim());
+                if (m.group(2) != null) p.put("count", String.valueOf(Objects.requireNonNullElse(toNumber(m.group(2)), 1)));
+                p.put("from", m.group(5).equals("armazem") ? "storage" : m.group(4).matches("desse|deste|daquele|naquele|nesse|neste") ? "look" : "");
+                if (t.matches(give)) p.put("give", "true");
+            }
+        }
+        if (p == null) {
+            Matcher m = Pattern.compile("\\b(guarde|guarda|coloque|coloca|deposite|bote|ponha)\\s+(.+?)\\s+(no|nesse|neste|naquele|num|em um|dentro do)\\s+(bau|barril|armazem)\\b").matcher(t);
+            if (m.find()) {
+                String what = m.group(2).trim();
+                p = params("kind", "put", "to", m.group(4).equals("armazem") ? "storage" : m.group(3).matches("nesse|neste|naquele") ? "look" : "");
+                if (!what.matches("tudo|tudo que (tem|tiver)|o que (tem|tiver|pegou|juntou)|isso")) {
+                    Matcher c = Pattern.compile("^(\\d+)\\s+(.+)$").matcher(what);
+                    if (c.find()) {
+                        p.put("count", c.group(1));
+                        what = c.group(2);
+                    }
+                    if (ItemNames.resolve(what) != null) p.put("item", what);
+                }
+            }
+        }
+        if (p == null) {
+            Matcher m = Pattern.compile("\\b(faca|fabrique|fabrica|crie|cria|forje|forja|produza|prepare|monte|construa)\\s+(?:(\\d+|um|uma|dois|duas|tres|quatro|cinco|seis|oito|dez)\\s+)?(.+)$").matcher(t);
+            if (m.find()) {
+                String phrase = m.group(3).replaceAll("\\s+(e me|e traga|e entregue|para mim|pra mim|com |na bancada|no forno|na fornalha|agora|por favor|rapido).*$", "").trim();
+                String item = resolveCraftable(phrase);
+                if (item != null) {
+                    p = params("kind", "craft", "item", item);
+                    if (m.group(2) != null) p.put("count", String.valueOf(Objects.requireNonNullElse(toNumber(m.group(2)), 1)));
+                    if (t.matches(give)) p.put("give", "true");
+                }
+            }
+        }
+        if (p == null) return null;
+        Npc who = speaker != null && speaker.office != Office.ADVISOR ? speaker : npcMentioned(k, t, null);
+        if (who != null) p.put("npc", who.name);
+        return p;
+    }
+
+    /** Só vira ordem de fabricar se o item existe e tem receita (senão "faça uma casa" seria um item). */
+    private String resolveCraftable(String phrase) {
+        String[] w = phrase.split("\\s+");
+        for (int len = Math.min(w.length, 4); len >= 1; len--) {
+            String cand = String.join(" ", Arrays.copyOfRange(w, 0, len));
+            String id = ItemNames.resolve(cand);
+            if (id == null || id.startsWith("#")) continue;
+            if (!core.physical().itemExists(id) || core.physical().recipes(id).isEmpty()) continue;
+            return id;
+        }
+        return null;
+    }
 
     /**
      * Reconhece ordens de rotina e escolhe o modelo de cadeia. Quem executa: o NPC com quem o rei fala

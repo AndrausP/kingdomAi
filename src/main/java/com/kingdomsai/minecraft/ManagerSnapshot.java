@@ -187,6 +187,23 @@ public final class ManagerSnapshot {
             o.add("roles", roles);
             chains.add(o);
         }
+        // ordens com as mãos em andamento aparecem no mesmo painel
+        for (var j : core.skills().jobs(k.id)) {
+            if (!j.status.live()) continue;
+            var n = core.npc(j.npcId);
+            var t = j.current();
+            JsonObject o = new JsonObject();
+            o.addProperty("n", j.number);
+            o.addProperty("name", "⚒ " + j.name);
+            o.addProperty("broken", j.status == com.kingdomsai.core.skill.PhysicalJob.Status.WAITING);
+            o.addProperty("reason", j.reason);
+            o.addProperty("cycles", 0);
+            JsonArray roles = new JsonArray();
+            if (n != null && t != null)
+                roles.add(n.name + " · " + j.status.display + ": " + t.label + (t.total > 1 ? " (" + t.done + "/" + t.total + ")" : ""));
+            o.add("roles", roles);
+            chains.add(o);
+        }
         root.add("chains", chains);
 
         JsonArray bs = new JsonArray();

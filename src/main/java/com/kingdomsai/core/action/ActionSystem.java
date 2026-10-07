@@ -68,6 +68,8 @@ public final class ActionSystem {
                 }
                 case TALK -> ActionResult.ok("");
                 case CHAIN -> chain(k, r);
+                case JOB -> job(k, r);
+                case CANCEL_JOB -> ActionResult.ok(core.skills().cancel(core.skills().find(k.id, r.param("job") != null ? r.param("job") : r.param("npc")), "ordem do rei"));
                 case SUMMON, FOLLOW -> summon(k, r);
                 case DISMISS -> {
                     Npc n = core.findNpc(k.id, r.param("npc"));
@@ -131,6 +133,17 @@ public final class ActionSystem {
         if (deadline > 0) for (Building b : planned) msg += " " + core.construction().setDeadline(b, deadline);
         else if (hasBuilder && !planned.isEmpty()) msg += " ETA " + core.construction().formatEta(planned.get(0)) + ".";
         return ActionResult.ok(msg);
+    }
+
+    /** Ordem física já aprovada: começa e mostra o plano (incluindo as tarefas que o planejador acrescentou). */
+    private ActionResult job(Kingdom k, ActionRequest r) {
+        var plan = com.kingdomsai.core.skill.JobPlanner.plan(core, k, r.actorId(), r.params());
+        var j = core.skills().start(k, plan.job(), r.param("order"));
+        Npc n = core.npc(j.npcId);
+        StringBuilder sb = new StringBuilder("Ordem #" + j.number + " para " + n.name + ":");
+        for (String line : plan.lines()) sb.append("\n   ").append(line);
+        for (String w : plan.warnings()) sb.append("\n⚠ ").append(w);
+        return ActionResult.ok(sb.toString());
     }
 
     private ActionResult summon(Kingdom k, ActionRequest r) {
