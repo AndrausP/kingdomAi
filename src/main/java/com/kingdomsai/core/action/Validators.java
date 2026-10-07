@@ -92,6 +92,10 @@ public final class Validators {
                 if (r.intParam("amount", 0) < 1 || r.intParam("amount", 0) > 5000)
                     return ActionResult.reject("invalid_param", "Quantidade inválida.");
             }
+            case MARK -> {
+                if (com.kingdomsai.core.kingdom.Marker.parse(r.param("kind")) == null)
+                    return ActionResult.reject("invalid_param", "Marco desconhecido: " + r.param("kind") + " (use spawn, praca, mina ou bosque).");
+            }
             case JOB -> {
                 try {
                     com.kingdomsai.core.skill.JobPlanner.specs(r.params());
@@ -210,6 +214,17 @@ public final class Validators {
                     return ActionResult.reject("too_far", n.name + " está a " + (int) n.pos.distXZ(to) + " blocos — longe demais para atender ao chamado (máx. "
                             + com.kingdomsai.core.ai.NpcScheduler.MAX_SUMMON_DISTANCE + ").");
             }
+            case MARK -> {
+                if ("true".equals(r.param("remove"))) break;
+                com.kingdomsai.core.common.Pos p = markTarget(core, r);
+                if (p == null) return ActionResult.reject("unknown_position", "Mire no chão (ou informe x y z) para eu saber onde marcar.");
+                if (!k.id.equals(core.state().territory.ownerAt(p)))
+                    return ActionResult.reject("outside_territory", "Esse ponto fica fora do território de " + k.name + ". Reivindique a região antes (CLAIM).");
+                var m = com.kingdomsai.core.kingdom.Marker.parse(r.param("kind"));
+                String unsafe = unsafeStanding(core, p);
+                if (unsafe != null && (m == com.kingdomsai.core.kingdom.Marker.SPAWN || m == com.kingdomsai.core.kingdom.Marker.GATHER))
+                    return ActionResult.reject("unsafe", "Não dá para marcar " + m.display.toLowerCase() + " aí: " + unsafe + ".");
+            }
             case JOB -> {
                 var plan = com.kingdomsai.core.skill.JobPlanner.plan(core, k, r.actorId(), r.params());
                 if (!plan.ok()) return ActionResult.reject("job_invalid", String.join(" ", plan.errors()));
@@ -241,6 +256,35 @@ public final class Validators {
         }
         return null;
     };
+
+    /** Ponto do marco: x y z explícitos, senão em cima do bloco que o rei mira, senão onde ele está. */
+    public static com.kingdomsai.core.common.Pos markTarget(KingdomsCore core, ActionRequest r) {
+        if (r.param("x") != null && r.param("y") != null && r.param("z") != null) {
+            try {
+                return new com.kingdomsai.core.common.Pos(Integer.parseInt(r.param("x").trim()), Integer.parseInt(r.param("y").trim()),
+                        Integer.parseInt(r.param("z").trim()));
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        if (r.actorKind() != ActionRequest.ActorKind.PLAYER) return null;
+        KingdomsCore.Look look = core.playerLook(r.actorId());
+        if (look != null && look.block() != null) return look.block().offset(0, 1, 0);
+        return core.playerPos(r.actorId());
+    }
+
+    /** Dá para ficar de pé aqui? (chão firme, sem água/lava, 2 blocos livres). null = seguro ou mundo desconhecido. */
+    public static String unsafeStanding(KingdomsCore core, com.kingdomsai.core.common.Pos p) {
+        var port = core.physical();
+        var ground = port.block(p.offset(0, -1, 0));
+        if (ground == com.kingdomsai.core.port.PhysicalPort.BlockInfo.UNKNOWN) return null;
+        var feet = port.block(p);
+        var head = port.block(p.offset(0, 1, 0));
+        if (ground.fluid() || feet.fluid()) return "é água/lava";
+        if (ground.air()) return "não há chão firme embaixo";
+        if (!feet.air() || !head.air()) return "não há espaço para ficar de pé (2 blocos livres)";
+        return null;
+    }
 
     /** Para onde o NPC vai: x/z explícitos ou a última posição conhecida do rei. */
     public static com.kingdomsai.core.common.Pos summonTarget(KingdomsCore core, ActionRequest r) {

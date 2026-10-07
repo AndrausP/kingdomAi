@@ -651,6 +651,9 @@ public final class WorkSystem {
 
     /** Mina e bosque do reino: lugares fixos, em direções diferentes a partir do centro. */
     public Pos natureSpot(Kingdom k, int which) {
+        // o rei marcou a mina/o bosque com a Bandeira do Reino
+        Pos marked = k.markers.get(which == 0 ? com.kingdomsai.core.kingdom.Marker.MINE : com.kingdomsai.core.kingdom.Marker.FOREST);
+        if (marked != null) return marked;
         int h = Math.abs(k.id.hashCode());
         double a = (h % 360) * Math.PI / 180.0 + which * 2.1;
         int dist = which == 0 ? 26 : 30;

@@ -52,13 +52,14 @@ public final class KingdomsExtension implements CommandService.Extension {
 
     @Override
     public List<String> subcommands() {
-        return List.of("config", "select");
+        return List.of("config", "select", "bandeira");
     }
 
     @Override
     public List<String> help() {
         return List.of("config · config set <chave> <valor> · config models · config test  (ex.: /k config set ai.model qwen2.5:14b)",
-                "blueprint pos1 · blueprint pos2 · blueprint save <nome> — salva uma construção sua como planta · blueprint import (pasta kingdomsai/blueprints, .nbt)");
+                "blueprint pos1 · blueprint pos2 · blueprint save <nome> — salva uma construção sua como planta · blueprint import (pasta kingdomsai/blueprints, .nbt)",
+                "bandeira — recebe a Bandeira do Reino (marca spawn, praça, mina, bosque; Shift + clique troca)");
     }
 
     @Override
@@ -73,6 +74,11 @@ public final class KingdomsExtension implements CommandService.Extension {
             }
             case "select" -> {
                 select(p, a, out);
+                return true;
+            }
+            case "bandeira", "marker", "flag" -> {
+                if (rt.core().kingdomOfPlayer(playerId) == null) out.add("✗ Só um rei tem a Bandeira do Reino.");
+                else rt.giveMarker(p);
                 return true;
             }
             case "blueprint", "planta" -> {

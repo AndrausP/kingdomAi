@@ -194,6 +194,11 @@ public final class CoreSelfTest {
         passed += ps[0];
         failed += ps[1];
 
+        // 14. Bandeira do Reino (marcos)
+        int[] mk = MarkerSelfTest.run();
+        passed += mk[0];
+        failed += mk[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

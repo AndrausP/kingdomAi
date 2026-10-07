@@ -53,7 +53,7 @@ public final class CommandService {
     public static final List<String> SUBCOMMANDS = List.of(
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
             "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
-            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag", "report");
+            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag", "report", "mark", "marks");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -194,6 +194,23 @@ public final class CommandService {
                 out.add("Para cercar tudo: /k build muralha [height=3-6] · ou peça \"construa um muro ao redor da vila\".");
             }
             case "report", "relatorio" -> out.addAll(core.reports().latest(player));
+            case "mark", "marcar" -> {
+                if (a.length < 2) {
+                    out.add("Uso: mark <spawn|praca|mina|bosque> [x y z] · mark <tipo> remover · (ou use a Bandeira do Reino)");
+                    return;
+                }
+                if (a.length >= 3 && a[2].matches("remover|remove|apagar"))
+                    act(k, player, ActionType.MARK, out, "kind", a[1], "remove", "true");
+                else if (a.length >= 5) act(k, player, ActionType.MARK, out, "kind", a[1], "x", a[2], "y", a[3], "z", a[4]);
+                else act(k, player, ActionType.MARK, out, "kind", a[1]);
+            }
+            case "marks", "marcos" -> {
+                out.add("# Marcos de " + k.name);
+                for (var m : com.kingdomsai.core.kingdom.Marker.values()) {
+                    Pos p = k.markers.get(m);
+                    out.add(m.display + ": " + (p == null ? "não marcado (padrão do reino)" : p.toString()));
+                }
+            }
             case "jobs", "ordens" -> jobs(k, out);
             case "job", "tarefa" -> job(k, player, a, out);
             case "bag", "mochila" -> {
@@ -237,6 +254,7 @@ public final class CommandService {
         out.add("books · book <nº> — livros e cartas do reino");
         out.add("job <nome> break|dig [3x3x3]|tunnel [n]|clear [5x5]|chop — mire no bloco/árvore antes");
         out.add("job <nome> take <qtd> <item> [armazem] · put [qtd item] · craft <qtd> <item> [entregar] · give · job cancel <nº> · jobs · bag <nome>");
+        out.add("mark <spawn|praca|mina|bosque> [x y z] · marks — pontos do reino (ou use a Bandeira do Reino: /k bandeira)");
         out.add("report — o que aconteceu enquanto você esteve fora (as ordens continuam mesmo longe)");
         out.add("call [nome] · follow [nome] [minutos] · dismiss [nome] — chama até onde você está (no Manager: tecla G)");
         out.add("village — tamanho da vila · build muralha [height=4] — muro sob medida ao redor da vila");

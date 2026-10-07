@@ -54,6 +54,17 @@ public final class RuleInterpreter {
             callReply = "Com sua licença, Majestade. Volto ao trabalho.";
         }
 
+        // --- marcos ("marque aqui como spawn", "a mina é aqui")
+        if (t.matches(".*\\b(marque|marca|marcar|defina|define|fica aqui|sera aqui|e aqui)\\b.*")
+                && t.matches(".*\\b(aqui|ali|esse|este|nesse|neste|onde estou|onde eu estou)\\b.*")) {
+            String[] kinds = {"spawn", "praca", "mina", "bosque", "floresta", "renascer"};
+            for (String kind : kinds)
+                if (t.contains(kind)) {
+                    acts.add(new Plan.PlannedAction(ActionType.MARK, "MARK", params("kind", kind)));
+                    break;
+                }
+        }
+
         // --- ordens físicas ("quebre esse bloco", "corte essa árvore", "pegue 3 ferro do baú", "faça uma picareta e me entregue")
         Map<String, String> job = acts.isEmpty() ? physicalOrder(k, speaker, t, text) : null;
         if (job != null) acts.add(new Plan.PlannedAction(ActionType.JOB, "JOB", job));

@@ -69,6 +69,7 @@ public final class ActionSystem {
                 case TALK -> ActionResult.ok("");
                 case CHAIN -> chain(k, r);
                 case JOB -> job(k, r);
+                case MARK -> mark(k, r);
                 case CANCEL_JOB -> ActionResult.ok(core.skills().cancel(core.skills().find(k.id, r.param("job") != null ? r.param("job") : r.param("npc")), "ordem do rei"));
                 case SUMMON, FOLLOW -> summon(k, r);
                 case DISMISS -> {
@@ -133,6 +134,25 @@ public final class ActionSystem {
         if (deadline > 0) for (Building b : planned) msg += " " + core.construction().setDeadline(b, deadline);
         else if (hasBuilder && !planned.isEmpty()) msg += " ETA " + core.construction().formatEta(planned.get(0)) + ".";
         return ActionResult.ok(msg);
+    }
+
+    private ActionResult mark(Kingdom k, ActionRequest r) {
+        var m = com.kingdomsai.core.kingdom.Marker.parse(r.param("kind"));
+        if ("true".equals(r.param("remove"))) {
+            boolean had = k.markers.remove(m) != null;
+            return ActionResult.ok(had ? m.display + " desmarcado: os súditos voltam ao padrão." : m.display + " não estava marcado.");
+        }
+        com.kingdomsai.core.common.Pos p = Validators.markTarget(core, r);
+        k.markers.put(m, p);
+        core.bus().publish(core.tick(), EventType.MARKER_SET, GameEvent.Severity.INFO, k.id, r.actorId(),
+                m.display + " marcado em " + p + ".", Map.of("kind", m.name(), "x", String.valueOf(p.x()), "y", String.valueOf(p.y()), "z", String.valueOf(p.z())));
+        String effect = switch (m) {
+            case SPAWN -> "Novos moradores chegam aqui e Vossa Majestade renasce aqui.";
+            case GATHER -> "Os súditos se reúnem aqui no fim da tarde.";
+            case MINE -> "Mineradores (rotina e cadeias) trabalham aqui.";
+            case FOREST -> "Lenhadores (rotina e cadeias) trabalham aqui.";
+        };
+        return ActionResult.ok(m.display + " marcado em " + p + ". " + effect);
     }
 
     /** Ordem física já aprovada: começa e mostra o plano (incluindo as tarefas que o planejador acrescentou). */

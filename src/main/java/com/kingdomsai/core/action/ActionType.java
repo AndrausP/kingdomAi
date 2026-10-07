@@ -39,6 +39,8 @@ public enum ActionType {
             "npc?, kind (break|dig|tunnel|clear|chop|take|put|craft|give) OU tasks (lista JSON); size? (3x3x3), length?, item?, count?, "
                     + "from?/to? (look=baú na mira do rei | storage=armazém | \"x y z\"), give? (true = entregar ao rei no fim)"),
     CANCEL_JOB(Permission.ASSIGN_WORK, true, List.of(), "job? (número) | npc?"),
+    MARK(Permission.CLAIM, true, List.of("kind"),
+            "kind (spawn|praca|mina|bosque), x?, y?, z? (padrão: o bloco que o rei mira), remove? (true = apagar o marco)"),
     SUMMON(Permission.TALK, true, List.of("npc"), "npc — a pessoa vem até onde o rei está (x?, z? para outro lugar)"),
     FOLLOW(Permission.TALK, true, List.of("npc"), "npc, minutes? (padrão 3) — a pessoa acompanha o rei"),
     DISMISS(Permission.TALK, true, List.of("npc"), "npc — dispensa quem foi chamado; volta à rotina"),

@@ -90,6 +90,7 @@ public final class PopulationSystem {
             Building hall = core.buildings(k.id).stream().filter(b -> b.isComplete() && b.blueprintId.equals("town_hall"))
                     .findFirst().orElse(null);
             if (hall != null && hall.origin.y() != Integer.MIN_VALUE) spawn = hall.entrance();
+            if (k.markers.containsKey(com.kingdomsai.core.kingdom.Marker.SPAWN)) spawn = k.spawnPoint(); // o rei marcou o spawn
             Npc n = core.createNpc(k, Profession.PEASANT, spawn);
             core.bus().publish(core.tick(), EventType.POPULATION_GROWTH, GameEvent.Severity.GOOD, k.id, n.id,
                     n.name + " chegou para morar em " + k.name + ".", Map.of("npc", n.id.toString()));

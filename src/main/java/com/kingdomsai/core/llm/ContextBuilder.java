@@ -51,6 +51,7 @@ public final class ContextBuilder {
                 .append("Lugares vêm da MIRA do rei (veja \"Mira do rei\" em WORLD DATA). Itens em português ou id (\"picareta de ferro\", \"minecraft:torch\"). ")
                 .append("Ex.: JOB(kind=craft, item=picareta de ferro, give=true) — o jogo busca os ingredientes no baú e faz gravetos/tábuas se faltar. ")
                 .append("Proibido: quebrar construções, baús ou terra de outro reino (o jogo recusa). Cancelar: CANCEL_JOB.");
+        sb.append("\nMarcos: MARK(kind=spawn|praca|mina|bosque) marca o ponto que o rei mira — spawn = onde chegam moradores e o rei renasce.");
         sb.append("\nMuralha: BUILD com blueprint=muralha (height 3-6) — o jogo mede a vila (veja \"Vila:\" em WORLD DATA) e cerca tudo; não invente coordenadas.");
         sb.append("\nChamar alguém até o rei: SUMMON(npc); acompanhar: FOLLOW(npc, minutes); dispensar: DISMISS(npc).");
         sb.append("\nPrazos: deadline=30s|5m|2h|1d|amanha (1 dia = 20 min de jogo). DEADLINE muda o prazo de uma obra existente.");
@@ -97,7 +98,8 @@ public final class ContextBuilder {
         if (npcKingdom != null) user.append("Local: ").append(core.scheduler() == null ? "" : sanitize(npcKingdom.name))
                 .append(", perto de ").append(npc.pos == null ? "?" : (int) npc.pos.distXZ(npcKingdom.center) + " blocos do centro").append(".\n");
         if (playerKingdom != null) for (String f : core.advisor().facts(playerKingdom)) user.append(f).append('\n');
-        if (npcKingdom != null) user.append(com.kingdomsai.core.construction.VillageWall.describe(core, npcKingdom)).append('\n');
+        if (npcKingdom != null) user.append(com.kingdomsai.core.construction.VillageWall.describe(core, npcKingdom)).append('\n')
+                .append(markersLine(npcKingdom));
         if (playerKingdom != null && npc.pos != null && core.playerPos(playerKingdom.rulerPlayer) != null)
             user.append("O rei está a ").append((int) npc.pos.distXZ(core.playerPos(playerKingdom.rulerPlayer))).append(" blocos de você.\n");
         if (!npc.relations.isEmpty()) {
@@ -126,6 +128,7 @@ public final class ContextBuilder {
         StringBuilder user = new StringBuilder("=== WORLD DATA ===\n");
         for (String f : core.advisor().facts(k)) user.append(f).append('\n');
         user.append(com.kingdomsai.core.construction.VillageWall.describe(core, k)).append('\n');
+        user.append(markersLine(k));
         user.append(lookLine(k.rulerPlayer));
         user.append("Pessoas: ");
         core.citizens(k.id).stream().limit(40).forEach(n -> user.append(n.name).append(" (").append(n.title()).append("), "));
@@ -133,6 +136,13 @@ public final class ContextBuilder {
         user.append("\n=== PLAYER INPUT ===\n<untrusted>").append(sanitize(Text.truncate(playerText, 500))).append("</untrusted>\n");
         return new LlmRequest("council", sys, Text.truncate(user.toString(), core.llmMaxChars()), k.id,
                 advisor == null ? null : advisor.id, playerText);
+    }
+
+    private static String markersLine(Kingdom k) {
+        if (k.markers.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("Marcos do reino: ");
+        k.markers.forEach((m, p) -> sb.append(m.display).append(" em ").append(p).append("; "));
+        return sb.append('\n').toString();
     }
 
     /** "Mira do rei: baú em x y z, com 12 barra de ferro..." — para "quebre isso", "pegue desse baú". */

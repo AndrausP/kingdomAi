@@ -29,6 +29,7 @@ Status: ✅ implementado · 🟡 parcial · ⏳ fase futura.
 | Debug da IA | ✅ | `/k debug npc|ai|events` |
 | Cadeias de trabalho: rotina adotada pelo chat, etapas físicas (ir, minerar, entregar no baú, fundir, guardar), validação antes de começar, quebra e retomada da mesma etapa | ✅ | `core/work/*` (`ChainValidator`, `WorkSystem`, `ChainTemplates`), ação `CHAIN`/`STOP_CHAIN`, `/k chains` |
 | Ordens com as mãos (quebrar/cavar/túnel, cortar árvore, baús, fabricar com receitas do jogo, entregar ao rei) com validação e planejamento de ingredientes | ✅ | `core/skill/*` (`JobPlanner`, `SkillSystem`, `ItemNames`), `port/PhysicalPort` ↔ `minecraft/McPhysicalPort`, ação `JOB`/`CANCEL_JOB`, [`JOGABILIDADE.md`](JOGABILIDADE.md) |
+| Bandeira do Reino: item que marca spawn (moradores chegam, rei renasce), praça, mina e bosque | ✅ | `kingdom/Marker`, ação `MARK`, `minecraft/item/KingdomMarkerItem` |
 | Chamar/seguir/dispensar NPC (tecla G) e muralha sob medida da vila | ✅ | `NpcScheduler.summon`, `construction/VillageWall` |
 | Biblioteca, livros (escrever/ler vira memória) e cartas entregues em mãos | ✅ | `work/Document`, planta `library`, `/k books` |
 
@@ -43,7 +44,7 @@ Status: ✅ implementado · 🟡 parcial · ⏳ fase futura.
 
 ## Decisões importantes
 
-1. **Core sem Minecraft.** Nada em `com.kingdomsai.core` importa `net.minecraft`. `CoreSelfTest` roda o Core com um mundo falso (149 verificações, incluindo `WorkSelfTest`, `AbilitySelfTest`, `SkillSelfTest` e `PersistenceSelfTest`).
+1. **Core sem Minecraft.** Nada em `com.kingdomsai.core` importa `net.minecraft`. `CoreSelfTest` roda o Core com um mundo falso (164 verificações, incluindo `WorkSelfTest`, `AbilitySelfTest`, `SkillSelfTest`, `PersistenceSelfTest` e `MarkerSelfTest`).
 2. **NPC não é LLM.** Rotina, trabalho e reinos de IA rodam com regras/Utility AI. A LLM é chamada só em conversa/ordem.
 3. **A LLM não executa nada.** Ela devolve `{"reply", "actions":[{type, params}]}`; cada ação passa pelo pipeline de validação com as permissões de quem ordenou. Ações inventadas viram `unknown_action`.
 4. **Texto do mundo é dado, não instrução.** Entrada do jogador vai dentro de `<untrusted>`, com `<`, `>` e `===` neutralizados.

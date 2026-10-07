@@ -51,5 +51,6 @@ public enum EventType {
     NPC_ARRIVED,
     JOB_STARTED,
     JOB_DONE,
-    JOB_FAILED
+    JOB_FAILED,
+    MARKER_SET
 }

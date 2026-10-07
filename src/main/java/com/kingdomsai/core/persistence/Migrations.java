@@ -73,6 +73,7 @@ public final class Migrations {
             if (k.stock == null) k.stock = new EnumMap<>(ResourceType.class);
             if (k.lastDelta == null) k.lastDelta = new EnumMap<>(ResourceType.class);
             if (k.laws == null) k.laws = new Kingdom.Laws();
+            if (k.markers == null) k.markers = new EnumMap<>(com.kingdomsai.core.kingdom.Marker.class);
         }
         for (Npc n : s.npcs.values()) {
             if (n.relations == null) n.relations = new HashMap<>();

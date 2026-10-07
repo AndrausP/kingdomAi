@@ -44,6 +44,19 @@ Fale com um súdito (botão direito → chat) e ele **adota a rotina daqui em di
 - Comandos: `chains` · `chain <nº>` (etapas, quem está onde, baús, histórico) · `chain <nº> stop|resume` · `chain new minerar_ferreiro npc=Nome forge=true` · `books` · `book <nº>`.
 - No Manager, o painel **ROTINAS** mostra cada cadeia (⛓ ativa / ⚠ quebrada) e o que cada pessoa está fazendo; o NPC segura a ferramenta ou o item da etapa (picareta, minério, barra, livro, carta).
 
+### Bandeira do Reino (marcar o spawn e outros pontos)
+
+Ao fundar o reino você ganha a **Bandeira do Reino** (perdeu? `/k bandeira`; receita: graveto + barra de ouro + lã). **Clique num bloco** para marcar o ponto em cima dele; **Shift + clique** troca o tipo:
+
+| Marco | Efeito |
+|---|---|
+| **Spawn do reino** | novos moradores chegam ali, os súditos sem casa dormem ali e **você renasce ali** |
+| Praça | os súditos se reúnem ali no fim da tarde |
+| Mina | mineradores (rotina e cadeias) trabalham ali |
+| Bosque | lenhadores (rotina e cadeias) trabalham ali |
+
+O jogo recusa ponto fora do território, em cima de água/lava, no ar ou sem 2 blocos livres (para o spawn e a praça). Segurando a bandeira, cada marco aparece como uma coluna de partículas. Também dá pelo chat (*"marque aqui como o spawn"*) ou `/k mark spawn [x y z]`, `/k marks`, `/k mark praca remover`.
+
 ### Ordens com as mãos: quebrar, baús, fabricar
 
 Mire e fale: *"quebre esse bloco"*, *"cave um buraco 3x3x3 aqui"*, *"abra um túnel de 10 blocos"*, *"corte essa árvore"*, *"pegue 5 barras de ferro desse baú"*, *"guarde tudo no armazém"*, *"faça uma picareta de ferro e me entregue"*. Os itens são **reais** (saem do baú, caem dos blocos, a picareta vai para a sua mão). O súdito planeja sozinho o que falta (pega ferro no baú, faz tábuas → gravetos), respeita as receitas do Minecraft e nunca quebra construções, baús, terra de outro reino ou blocos colados em água/lava. Comandos: `jobs`, `job <nome> dig 3x3x3`, `job <nome> craft 4 tocha entregar`, `bag <nome>`.

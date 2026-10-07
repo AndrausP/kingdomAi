@@ -3,5 +3,6 @@
   "key.kingdomsai.manager": "Manager Mode (king's free camera)",
   "key.categories.kingdomsai": "Kingdoms AI",
   "key.kingdomsai.interface": "Manager interface (cursor)",
-  "key.kingdomsai.call": "Call subject (aimed or selected)"
+  "key.kingdomsai.call": "Call subject (aimed or selected)",
+  "item.kingdomsai.kingdom_marker": "Kingdom Banner"
 }
