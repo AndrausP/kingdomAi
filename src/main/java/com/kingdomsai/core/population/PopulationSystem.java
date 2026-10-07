@@ -44,6 +44,7 @@ public final class PopulationSystem {
             target += (k.morale - 60) / 5.0;
             target += (k.legitimacy - 70) / 4.0;
             if (k.laws.conscription) target -= 6;
+            target -= k.infamy / 4.0; // medo do rei cruel
             double before = k.stability;
             k.stability = Text.clamp(k.stability + (target - k.stability) * 0.15, 0, 100);
             double moraleTarget = 70 + (k.famine ? -35 : 0) + (k.get(ResourceType.FOOD) > pop * 20 ? 8 : 0)
@@ -84,7 +85,7 @@ public final class PopulationSystem {
             return;
         }
         boolean canGrow = pop < cap && pop < core.config().maxNpcsPerKingdom && k.stability > 40
-                && k.get(ResourceType.FOOD) > Math.max(30, pop * 8) && k.laws.openMigration;
+                && k.get(ResourceType.FOOD) > Math.max(30, pop * 8) && k.laws.openMigration && k.infamy < 60; // ninguém muda para o reino do tirano
         if (canGrow && core.rng().nextDouble() < 0.55) {
             Pos spawn = k.center;
             Building hall = core.buildings(k.id).stream().filter(b -> b.isComplete() && b.blueprintId.equals("town_hall"))

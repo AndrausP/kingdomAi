@@ -68,6 +68,37 @@ public final class ManagerSnapshot {
         kj.addProperty("cx", k.center.x());
         kj.addProperty("cz", k.center.z());
         kj.addProperty("advice", core.advisor().explain(k));
+        // guerra e domínio
+        var war = core.warfare();
+        kj.addProperty("claimLimit", war.claimLimit(k));
+        kj.addProperty("freeClaims", war.freeClaims(k));
+        kj.addProperty("infamy", k.infamy);
+        kj.addProperty("captives", war.captiveCount(k));
+        kj.addProperty("enslaved", war.enslavedCount(k));
+        kj.addProperty("armyFood", core.count(k.id, com.kingdomsai.core.npc.Profession.SOLDIER) * com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD
+                + core.count(k.id, com.kingdomsai.core.npc.Profession.GUARD) * com.kingdomsai.core.military.MilitarySystem.GUARD_FOOD);
+        var cmd = war.commander(k, null);
+        kj.addProperty("commander", cmd == null ? "" : cmd.displayName());
+        JsonArray camps = new JsonArray();
+        for (var c : war.campaigns(k.id)) {
+            if (!c.live() && core.tick() - c.startTick > 20L * 600) continue;
+            JsonObject cj = new JsonObject();
+            Kingdom t = core.kingdom(c.targetKingdomId);
+            cj.addProperty("n", c.number);
+            cj.addProperty("kind", c.kind.display);
+            cj.addProperty("status", c.status.display);
+            cj.addProperty("live", c.live());
+            cj.addProperty("target", t == null ? "terra livre" : t.name);
+            cj.addProperty("people", c.members.size());
+            long eta = c.status == com.kingdomsai.core.military.Campaign.Status.MARCHING ? c.arriveTick - core.tick()
+                    : c.status == com.kingdomsai.core.military.Campaign.Status.RETURNING ? c.returnTick - core.tick() : 0;
+            cj.addProperty("eta", Math.max(0, eta / 20));
+            cj.addProperty("result", c.result);
+            camps.add(cj);
+        }
+        kj.add("campaigns", camps);
+        var pend = core.actions().pending(player.getUUID());
+        root.addProperty("pending", pend == null ? "" : pend.summary());
         root.add("kingdom", kj);
 
         JsonArray res = new JsonArray();

@@ -21,11 +21,20 @@ Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1"
 | Interface do Manager (abas, botões, mapa) | **Alt esquerdo** dentro do Manager |
 | Selecionar / conversar com NPC no Manager | clique esquerdo seleciona · direito abre a conversa |
 | Conversar com um NPC (fora do Manager) | botão direito nele → o chat abre com `/k say ` |
-| Ordem em linguagem natural | caixa de texto do Manager ou `/k order construam 2 casas em 10 minutos` |
+| Ordem em linguagem natural | **só o chat** (tecla T, sem barra): *"Rosalind, ataque Eldmark"*, *"Capitão, monte um exército"*, *"conselho, construam 2 casas"* — ou a caixa do Manager / `/k order ...` |
+| Falar com quem está perto | escreva no chat sem nome: vai para o súdito selecionado/chamado (24 blocos) ou o mais perto (6 blocos) |
 | Configurar IA/modelo | aba **⚙ Config** do Manager ou `/k config ...` |
 | Todos os comandos | `/k help` (`/kingdom` e `/reino` também funcionam) |
 
-Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `claim`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`.
+Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `attack <reino>`, `settle 3`, `claim`, `captives`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`. **Tudo dá para fazer só pelo chat** — os comandos são atalho.
+
+### Guerra e domínio (liberdade total, o jogo cobra)
+
+- **Exército não custa ouro, custa comida.** *"Convoquem 5 soldados"* ou, para alguém competente, *"Capitão, monte um exército"* — sem número, o general/capitão decide quantos (olha a maior ameaça) e quem (camponeses primeiro, os mais corajosos). Soldado come 2 por ciclo, 3 em campanha, guarda 1,5 (civil 1). Sem limite de tamanho: o limite é a comida.
+- **Terra livre é grátis até um limite** (30 células + 2 por morador livre + 3 por militar). Além disso a terra **se toma**: *"mandem 3 colonos para cá"* (gente vai morar lá e finca marcos, mesmo além do limite) ou *"ataquem Eldmark"* / *"invadam aqui"* — tropas marcham de verdade, lutam, tomam as células. Atacar sem guerra declarada declara na hora (com desonra). O comandante escolhe quem vai e o objetivo (a vila, se a tropa dá conta; senão a fronteira). Vila sem defesa cai: a terra passa a ser sua e os moradores viram **cativos**. *"Recuem"* traz a tropa de volta. Os reinos de IA também atacam quando estão em guerra e mais fortes.
+- **Cativos e escravidão**: *"escravizem os cativos e ponham na mina"* (trabalho forçado: rendem 60%, comem menos, fogem ou se revoltam se houver menos de 1 guarda para cada 3), *"libertem os escravos"* (e *"mandem para casa"*).
+- **Massacre e execução**: *"guardas, matem todos da vila"*, *"executem os prisioneiros"*, *"execute o Fulano"*. Só o rei manda (nenhum NPC, carta ou IA de reino); o jogo diz quantos morrem e **pede confirmação** (*"confirmo"* / *"desisto"*, 60 s); cada guarda decide se obedece (lealdade, honestidade, agressividade, amizade com as vítimas) — se a maioria recusa é **motim** e ninguém morre. Cumprida, despencam legitimidade, estabilidade e moral, sobe a **infâmia** (ninguém imigra para o reino do tirano) e os vizinhos ficam sabendo.
+- Abas **Exército** e **Terra** do Manager: convocar, atacar, recuar, colonizar, cativos; a barra vermelha mostra a ordem que espera confirmação. Regras e testes: [`docs/JOGABILIDADE.md`](docs/JOGABILIDADE.md#guerra-e-domínio).
 
 ### Rotinas e cadeias de trabalho
 

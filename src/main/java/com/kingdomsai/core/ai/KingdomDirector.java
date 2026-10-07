@@ -40,6 +40,8 @@ public final class KingdomDirector {
         }
     }
 
+    private final Map<java.util.UUID, Kingdom> attackTarget = new HashMap<>();
+
     public List<Priority> evaluate(Kingdom k) {
         List<Priority> ps = new ArrayList<>();
         int pop = core.population(k.id);
@@ -66,8 +68,26 @@ public final class KingdomDirector {
         int desiredMil = (int) Math.ceil(pop * (0.08 + k.personality.militarism / 500.0) * (1 + Math.min(threat, 2)));
         ps.add(new Priority("FORTIFY", core.military(k.id) < desiredMil ? 0.3 + threat * 0.4 + k.personality.militarism / 200.0 : 0,
                 "ameaça " + String.format(Locale.ROOT, "%.2f", threat) + " (" + threatBy + "), militares " + core.military(k.id) + "/" + desiredMil));
-        ps.add(new Priority("EXPAND", k.personality.expansionism / 140.0 * (k.get(ResourceType.GOLD) > 120 ? 1 : 0.2),
-                "expansionismo " + k.personality.expansionism));
+        ps.add(new Priority("EXPAND", k.personality.expansionism / 140.0 * (core.warfare().freeClaims(k) > 0 ? 1 : 0),
+                "expansionismo " + k.personality.expansionism + ", terra livre " + core.warfare().freeClaims(k)));
+        // Em guerra e mais forte: manda a tropa (o comandante escolhe quem e o objetivo).
+        Kingdom prey = null;
+        double edge = 0;
+        boolean busy = core.warfare().campaigns(k.id).stream().anyMatch(c -> c.live());
+        if (!busy && !k.famine)
+            for (Kingdom o : core.state().kingdoms.values()) {
+                if (o == k || core.population(o.id) == 0 || core.diplomacy().link(k.id, o.id).state != Diplomacy.State.WAR) continue;
+                double force = 0;
+                for (var n : core.warfare().available(k, false)) force += core.warfare().power(n, k);
+                double def = core.warfare().defenseAt(o, o.center) * 0.5 + 0.5;
+                if (force / def > edge) {
+                    edge = force / def;
+                    prey = o;
+                }
+            }
+        attackTarget.put(k.id, prey);
+        ps.add(new Priority("CAMPAIGN", prey != null && edge >= 1.4 ? 0.45 + k.personality.militarism / 200.0 : 0,
+                prey == null ? "sem guerra/sem tropa" : "vantagem " + String.format(Locale.ROOT, "%.1f", edge) + " sobre " + prey.name));
         boolean needBuilder = core.count(k.id, Profession.BUILDER) == 0;
         boolean needWood = k.get(ResourceType.WOOD) < 60 && core.count(k.id, Profession.LUMBERJACK) < 2;
         boolean needStone = k.get(ResourceType.STONE) < 40 && core.count(k.id, Profession.MINER) < 2;
@@ -84,6 +104,16 @@ public final class KingdomDirector {
         lastReasoning.put(k.id, why.toString());
         int actionsTaken = 0;
         for (Priority p : ps) {
+            if (p.goal().equals("CAMPAIGN")) {
+                // o general age em paralelo ao conselho civil: a guerra não espera a fazenda ficar pronta
+                if (p.score() >= 0.5) {
+                    ActionResult r = act(k, p.goal());
+                    if (r != null && r.ok())
+                        core.bus().publish(core.tick(), EventType.AI_DECISION, GameEvent.Severity.WARN, k.id, k.rulerNpc,
+                                k.name + ": CAMPAIGN — " + r.message(), Map.of("goal", p.goal(), "reason", p.reason()));
+                }
+                continue;
+            }
             if (actionsTaken >= 2 || p.score() < 0.25) break;
             ActionResult r = act(k, p.goal());
             if (r != null && r.ok()) {
@@ -111,6 +141,7 @@ public final class KingdomDirector {
                 return exec(k, ActionType.BUILD, "blueprint", k.get(ResourceType.WOOD) > 90 ? "house_medium" : "house_small");
             }
             case "FORTIFY" -> {
+                if (core.economy().foodTicksLeft(k) < 20) return null; // soldado come: sem comida, não convoca
                 if (core.completedOf(k.id, "barracks") == 0 && core.military(k.id) >= 4 && core.construction().projects(k.id).isEmpty()) {
                     ActionResult r = exec(k, ActionType.BUILD, "blueprint", "barracks");
                     if (r.ok()) return r;
@@ -121,6 +152,10 @@ public final class KingdomDirector {
             }
             case "EXPAND" -> {
                 return exec(k, ActionType.CLAIM, "amount", "1");
+            }
+            case "CAMPAIGN" -> {
+                Kingdom prey = attackTarget.get(k.id);
+                return prey == null ? null : exec(k, ActionType.ATTACK, "target", prey.name);
             }
             case "BALANCE_WORKFORCE" -> {
                 String to = core.count(k.id, Profession.BUILDER) == 0 ? "BUILDER"

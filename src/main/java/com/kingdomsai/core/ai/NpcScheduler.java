@@ -73,6 +73,7 @@ public final class NpcScheduler {
             if (!n.materialized && i.target() != null && n.pos != null) {
                 // NPC abstrato: "teleporta" gradualmente para o destino (simulação agregada).
                 n.pos = moveTowards(n.pos, i.target(), i.activity() == NpcActivity.SUMMONED ? 6 : 4);
+                if (i.activity() == NpcActivity.IMPRISONED) n.pos = i.target();
             }
         }
     }
@@ -89,6 +90,9 @@ public final class NpcScheduler {
         if (k == null) return new Intent(NpcActivity.IDLE, n.pos, 4);
         // chamado do rei vem antes de tudo (até do sono)
         if (isSummoned(n)) return new Intent(NpcActivity.SUMMONED, n.summonTarget, n.following ? 3 : 2);
+        // em campanha (marcha, ocupação, volta) ou preso como cativo
+        Intent war = core.warfare().intentFor(n);
+        if (war != null) return war;
         // ordem física direta (quebrar, baú, fabricar) também passa na frente do sono
         Intent job = core.skills().intentFor(n);
         if (job != null) return job;

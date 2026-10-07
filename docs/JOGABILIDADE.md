@@ -62,6 +62,32 @@ Mire no lugar (o jogo acompanha a sua mira, inclusive no Manager) e fale com o s
 
 Com o mundo fechado (single player) nada anda — igual ao resto do Minecraft. Em servidor, com o rei deslogado, tudo segue.
 
+## Guerra e domínio
+
+Liberdade total pelo chat; o jogo cobra as consequências. Tudo passa pelo `ActionSystem` (validadores) e é testado em `MilitarySelfTest`.
+
+| Regra | Por quê (design) | Teste |
+|---|---|---|
+| Convocar não custa ouro; soldado come 2 (3 em campanha), guarda 1,5, civil 1 | o rei pediu: exército cobra comida, não dinheiro; o limite natural é a fome | `convocar não custa ouro`, `o exército custa comida` |
+| Sem número, o general/capitão decide quantos convocar e quem vai à guerra | "falo para alguém competente e ele determina" | `o capitão decide quantos`, `o capitão escolheu quem vai` |
+| Terra livre grátis até 30 + 2/morador livre + 3/militar células | expansão pacífica tem teto; além dele a terra se toma | `até um limite`, `o limite ensina a tomar` |
+| Colonos (SETTLE) tomam terra livre além do limite; terra de reino com guardas → expulsos | "mandar povos lá" | `colônia além do limite`, (expulsão: `defesa ≥ 1`) |
+| Tropas (ATTACK/OCCUPY): marcha 4 blocos/s, batalha força × defesa (militares perto do alvo + muralha ×1,5 + milícia), baixas dos dois lados, 3×3 células para o vencedor | invasão com custo real | `batalha na fronteira vencida`, `células mudaram de dono` |
+| Atacar sem guerra declarada declara na hora, −15 honra, −3 legitimidade | sem trava, com preço | `ataque sem declaração declara guerra`, `…e custa honra` |
+| Vila sem defensores cai: terra e obras passam ao vencedor, moradores viram cativos (ou morrem, se o rei confirmou "sem piedade") | conquista completa | `vila de Eldmark caiu`, `moradores viraram cativos` |
+| Cativo não é convocado, promovido nem reatribuído (só ENSLAVE/FREE/PURGE) | condição muda o que a pessoa pode fazer | `cativo não é convocado`, `cativo não recebe cargo` |
+| Escravizado trabalha a 60%, come 0,8; sem 1 guarda para cada 3 → fuga (6%/ciclo) ou revolta | escravidão tem risco | `sem guardas, escravizados fogem ou se revoltam` |
+| PURGE/ENSLAVE/"sem piedade": só o rei; NPC, IA de reino, carta ou memória nunca disparam | anti-injeção e coerência | `NPC não manda matar`, `IA de reino não escraviza` |
+| PURGE pede confirmação ("confirmo"/"desisto", 60 s); `confirm=true` vindo da IA é ignorado | irreversível | `pede confirmação`, `IA/carta não pula a confirmação`, `confirmação expira` |
+| Cada guarda decide: lealdade, agressividade, disciplina vs. honestidade e amizade com as vítimas; maioria recusa → motim, ninguém morre, rei perde autoridade | quem cumpre é gente | `MOTIM, ninguém morre`, `execução cumprida após confirmar` |
+| Massacre: legitimidade/estabilidade/moral despencam, infâmia sobe (pesa na estabilidade, bloqueia imigração), vizinhos ficam hostis, soldados e testemunhas lembram, crônica registra | consequência | `legitimidade e estabilidade despencam`, `os vizinhos ficam sabendo` |
+| IA de reino em guerra e mais forte (≥1,4×) manda tropa; o general age em paralelo ao conselho civil | a guerra é de mão dupla | `IA em guerra e mais forte manda tropa` |
+| Só o chat: "Nome, ordem", "Capitão, ...", "conselho, ...", súdito perto; conversa entre jogadores passa direto | liberdade | `chat "Nome, ordem"`, `conversa entre jogadores passa direto` |
+| Se a IA (Claude/Ollama) deixar de fora uma ordem explícita de guerra, as regras completam | a ordem do rei não depende do humor do modelo | (`DialogueService.withExplicitOrders`) |
+| Save no meio da marcha continua; save v2 abre como v3 (todos livres, sem campanhas) | persistência | `save no meio da marcha`, `save v2 → v3` |
+
+Limites conhecidos: a batalha é simulada (os NPCs marcham de verdade, mas o choque é calculado); colonos fincam marcos e voltam (não há vila nova ainda).
+
 ## Validação final (`ValidationSelfTest`)
 
 | Risco | Como foi fechado | Teste |
@@ -79,8 +105,8 @@ Com o mundo fechado (single player) nada anda — igual ao resto do Minecraft. E
 
 ## O que só o build e o jogo confirmam
 
-O Core é testado aqui (185 verificações). O adaptador do Minecraft **não pôde ser compilado neste ambiente** (sem acesso aos servidores do NeoForge/Mojang). As APIs do NeoForge usadas foram conferidas no código-fonte oficial do 1.21.1; as chamadas do Minecraft "puro" abaixo foram escritas pela documentação e precisam do `./gradlew build`:
-`Block.getDrops`, `BlockState.spawnAfterBreak`, `ItemStack.isCorrectToolForDrops`, `Level.destroyBlock/destroyBlockProgress/mayInteract`, `ChestBlock.getContainer`, `HopperBlockEntity.addItem`, `RecipeManager.getAllRecipesFor` + `ShapedRecipe.getWidth/getHeight` + `Ingredient.getItems`, `ServerLevel.setChunkForced/getForcedChunks/sendParticles`, `ServerPlayer.setRespawnPosition`, `CustomData.update`, `Containers.dropItemStack`.
+O Core é testado aqui (276 verificações). O adaptador do Minecraft **não pôde ser compilado neste ambiente** (sem acesso aos servidores do NeoForge/Mojang). As APIs do NeoForge usadas foram conferidas no código-fonte oficial do 1.21.1; as chamadas do Minecraft "puro" abaixo foram escritas pela documentação e precisam do `./gradlew build`:
+`Block.getDrops`, `BlockState.spawnAfterBreak`, `ItemStack.isCorrectToolForDrops`, `Level.destroyBlock/destroyBlockProgress/mayInteract`, `ChestBlock.getContainer`, `HopperBlockEntity.addItem`, `RecipeManager.getAllRecipesFor` + `ShapedRecipe.getWidth/getHeight` + `Ingredient.getItems`, `ServerLevel.setChunkForced/getForcedChunks/sendParticles`, `ServerPlayer.setRespawnPosition`, `CustomData.update`, `Containers.dropItemStack`. (`ServerChatEvent.getRawText` foi conferido no código do NeoForge 1.21.1.)
 
 Roteiro rápido no jogo (mundo novo, perfil `kingdoms`):
 1. Entrar → recebe a Bandeira; marcar o spawn; morrer → renasce no spawn.

@@ -121,10 +121,20 @@ public final class RuleInterpreter {
             String dl = deadlineIn(t);
             if (dl != null) acts.add(new Plan.PlannedAction(ActionType.DEADLINE, "DEADLINE", params("deadline", dl)));
         }
-        // --- exército
-        if (t.matches(".*\\b(recrut|alist|convoc|recruit|treine novos).*")) {
-            acts.add(new Plan.PlannedAction(ActionType.RECRUIT, "RECRUIT", params("amount", String.valueOf(firstNumber(t, 1)))));
+        // --- exército (sem número: quem é competente decide quantos e quem)
+        if (t.matches(".*\\b(recrut|alist|convoc|recruit|treine novos|monte um exercito|forme um exercito|reforce o exercito|reforcem o exercito|prepare as tropas|preparem as tropas).*")) {
+            Map<String, String> p = params();
+            // "monte UM exército" não é número: só dígitos ou número antes de soldados/homens/recrutas
+            java.util.regex.Matcher dm = Pattern.compile("\\b(\\d{1,2})\\b").matcher(t);
+            int n = dm.find() ? Integer.parseInt(dm.group(1)) : numberBeforeWord(t, "soldad", -1);
+            if (n < 0) n = numberBeforeWord(t, "homens", -1);
+            if (n < 0) n = numberBeforeWord(t, "recrutas", -1);
+            if (n > 0) p.put("amount", String.valueOf(n));
+            Npc decider = commanderIn(k, t, speaker);
+            if (decider != null) p.put("npc", decider.name);
+            acts.add(new Plan.PlannedAction(ActionType.RECRUIT, "RECRUIT", p));
         }
+        warOrders(k, speaker, t, acts);
         if (t.matches(".*\\b(liber|dispens|desmobiliz|release|devolv).*") && t.contains("soldad")) {
             Map<String, String> p = params("amount", String.valueOf(firstNumber(t, 1)));
             Profession to = professionAnywhere(t, Profession.SOLDIER);
@@ -165,13 +175,15 @@ public final class RuleInterpreter {
             acts.add(new Plan.PlannedAction(ActionType.LAW, "LAW", params("law", "conscription", "value", off ? "off" : "on")));
         }
         // --- território
-        if (t.matches(".*\\b(expand|reivindic|anex|claim|aument[ae] o territ).*")) {
+        if (t.matches(".*\\b(expand|reivindic|reivindiq|anex|claim|aument[ae] o territ).*")) {
             acts.add(new Plan.PlannedAction(ActionType.CLAIM, "CLAIM", params("amount", String.valueOf(Math.min(5, firstNumber(t, 1))))));
         }
         // --- diplomacia
         Kingdom other = kingdomMentioned(k, t);
         if (other != null) {
-            if (t.matches(".*\\b(declar.* guerra|guerra contra|ataqu|invad|declare war).*")) {
+            if (acts.stream().anyMatch(a -> a.type() == ActionType.ATTACK || a.type() == ActionType.SETTLE)) {
+                // já virou ataque/colonização (a guerra é declarada junto se preciso)
+            } else if (t.matches(".*\\b(declar.* guerra|guerra contra|declare war).*")) {
                 acts.add(new Plan.PlannedAction(ActionType.DECLARE_WAR, "DECLARE_WAR", params("target", other.name)));
             } else if (t.matches(".*\\b(paz|armisti|peace).*")) {
                 acts.add(new Plan.PlannedAction(ActionType.MAKE_PEACE, "MAKE_PEACE", params("target", other.name)));
@@ -214,6 +226,99 @@ public final class RuleInterpreter {
             else reply = core.advisor().answer(k, text);
         }
         return new Plan(reply, acts);
+    }
+
+    // ------------------------------------------------------------------ guerra e domínio
+
+    // "mata" (floresta) não é ordem: só mate/matem/matar
+    private static final String KILL = ".*\\b(mate|matem|matar|mate-o|massacr\\w*|extermin\\w*|execut[ae]m?|executar|degol\\w*|enforqu\\w*|chacin\\w*|passem a fio|passe a fio)\\b.*";
+    private static final String NO_QUARTER = ".*\\b(sem piedade|sem misericordia|nao poupem|nao poupe|ninguem vivo|sem prisioneiros|matem todos|passem a fio|saqueiem tudo)\\b.*";
+
+    /** Ordens de guerra pelo chat: atacar, colonizar, recuar, matar, escravizar, libertar. */
+    private void warOrders(Kingdom k, Npc speaker, String t, List<Plan.PlannedAction> acts) {
+        Kingdom other = kingdomMentioned(k, t);
+        boolean killWords = t.matches(KILL) && !t.matches(".*\\b(nao mat\\w*|ninguem morre|nao execut\\w*)\\b.*");
+        // atacar / invadir / tomar
+        boolean attackWords = t.matches(".*\\b(ataq\\w*|ataquem|atacar|invad\\w*|conquist\\w*|ocup[ae]m?|ocupar|saque\\w*|marchem|avancem|tomem|tomar|tome)\\b.*");
+        boolean here = t.matches(".*\\b(aqui|ca|essa terra|esta terra|este lugar|esse lugar|onde estou)\\b.*");
+        if (attackWords && (other != null || here) && !t.matches(".*\\b(tome cuidado|tome conta|nao ataq\\w*)\\b.*")
+                || killWords && other != null) {
+            Map<String, String> p = params("target", other != null ? other.name : "aqui");
+            int n = numberBeforeWord(t, "soldad", -1);
+            if (n > 0) p.put("amount", String.valueOf(n));
+            if (t.matches(".*\\b(guardas)\\b.*") && t.matches(".*\\b(lev\\w*|inclusive|tambem|com os|todos)\\b.*")) p.put("guards", "true");
+            if (t.matches(".*\\b(vila|capital|cidade|tudo|o reino inteiro)\\b.*")) p.put("objective", "vila");
+            else if (t.matches(".*\\b(fronteira|borda)\\b.*")) p.put("objective", "fronteira");
+            if (t.matches(NO_QUARTER) || killWords && other != null) p.put("no_quarter", "true");
+            Npc cmd = commanderIn(k, t, speaker);
+            if (cmd != null) p.put("npc", cmd.name);
+            acts.add(new Plan.PlannedAction(ActionType.ATTACK, "ATTACK", p));
+            return;
+        }
+        // recuar
+        if (t.matches(".*\\b(recuem|recuar|recua|retirada|batam em retirada|voltem para casa|tragam as tropas)\\b.*")) {
+            acts.add(new Plan.PlannedAction(ActionType.RETREAT, "RETREAT", params()));
+            return;
+        }
+        // colonizar ("mandem 5 colonos para cá", "povoem aquela terra")
+        if (t.matches(".*\\b(coloniz\\w*|colonos|povoem|povoar|assentamento|fundem um posto|mand\\w* (gente|pessoas|familias|moradores) (para|pra))\\b.*")) {
+            Map<String, String> p = params("target", other != null ? other.name : "aqui", "amount", String.valueOf(Math.min(20, firstNumber(t, 3))));
+            acts.add(new Plan.PlannedAction(ActionType.SETTLE, "SETTLE", p));
+            return;
+        }
+        // libertar
+        if (t.matches(".*\\b(libert\\w*|solt[ae]m?|soltar|alforri\\w*|deem liberdade)\\b.*") && !t.contains("soldad")) {
+            String target = t.matches(".*\\b(todos|todas)\\b.*") ? "todos" : t.matches(".*\\bescrav\\w*.*") ? "escravos"
+                    : t.matches(".*\\b(cativ\\w*|prisioneir\\w*|presos?)\\b.*") ? "cativos" : null;
+            Npc who = target == null ? npcMentioned(k, t, speaker) : null;
+            if (target != null || who != null) {
+                Map<String, String> p = params("target", target != null ? target : who.name);
+                if (t.matches(".*\\b(para casa|terra natal|de volta|voltem|mande embora|mandem embora|devolv\\w*)\\b.*")) p.put("home", "true");
+                acts.add(new Plan.PlannedAction(ActionType.FREE, "FREE", p));
+            }
+            return;
+        }
+        // escravizar
+        if (t.matches(".*\\b(escraviz\\w*|acorrent\\w*|trabalho forcado|trabalhos forcados|servidao)\\b.*") && !t.matches(".*\\bnao escraviz.*")) {
+            String target = t.matches(".*\\b(vila|todos|povo|moradores|aldeia)\\b.*") ? "vila" : null;
+            Npc who = target == null ? npcMentioned(k, t, speaker) : null;
+            if (target == null && who == null) target = "cativos";
+            Map<String, String> p = params("target", target != null ? target : who.name);
+            Profession work = professionAnywhere(t, Profession.SOLDIER);
+            if (t.contains(" mina") || t.contains("minera")) work = Profession.MINER;
+            else if (t.contains("lavour") || t.contains("fazend") || t.contains("campo") || t.contains("plant")) work = Profession.FARMER;
+            else if (t.contains("lenha") || t.contains("floresta") || t.contains("madeir")) work = Profession.LUMBERJACK;
+            if (work != null && work != Profession.GUARD) p.put("work", work.name());
+            acts.add(new Plan.PlannedAction(ActionType.ENSLAVE, "ENSLAVE", p));
+            return;
+        }
+        // matar / executar (no próprio reino)
+        if (killWords) {
+            String target = t.matches(".*\\b(cativ\\w*|prisioneir\\w*|presos?)\\b.*") ? "cativos"
+                    : t.matches(".*\\bescrav\\w*.*") ? "escravos"
+                    : t.matches(".*\\b(todos|todo mundo|vila|aldeia|povo|moradores|civis|cidade)\\b.*") ? "vila" : null;
+            Npc who = target == null ? npcMentioned(k, t, speaker) : null;
+            if (target != null || who != null)
+                acts.add(new Plan.PlannedAction(ActionType.PURGE, "PURGE", params("target", target != null ? target : who.name)));
+        }
+    }
+
+    /** Quem decide: o NPC com quem o rei fala, se for general/capitão; senão um general/capitão citado pelo nome. */
+    private Npc commanderIn(Kingdom k, String t, Npc speaker) {
+        if (speaker != null && speaker.office.allows(com.kingdomsai.core.npc.Permission.COMMAND) && speaker.office != Office.KING) return speaker;
+        Npc n = npcMentioned(k, t, null);
+        return n != null && n.office.allows(com.kingdomsai.core.npc.Permission.COMMAND) && n.office != Office.KING ? n : null;
+    }
+
+    private static int numberBeforeWord(String t, String word, int def) {
+        int i = t.indexOf(word);
+        if (i < 0) return def;
+        String[] ws = t.substring(0, i).trim().split("[^\\p{L}0-9]+");
+        for (int j = ws.length - 1; j >= Math.max(0, ws.length - 2); j--) {
+            Integer n = toNumber(ws[j]);
+            if (n != null) return n;
+        }
+        return def;
     }
 
     // ------------------------------------------------------------------ respostas
@@ -551,6 +656,12 @@ public final class RuleInterpreter {
         for (Kingdom o : core.state().kingdoms.values()) {
             if (o == self) continue;
             if (t.contains(Text.norm(o.name))) return o;
+        }
+        for (Kingdom o : core.state().kingdoms.values()) {
+            if (o == self) continue;
+            for (String w : Text.norm(o.name).split("\\s+"))
+                if (w.length() >= 5 && !w.matches("reino|imperio|condado|ducado|terras") && Pattern.compile("\\b" + Pattern.quote(w) + "\\b").matcher(t).find())
+                    return o;
         }
         return null;
     }

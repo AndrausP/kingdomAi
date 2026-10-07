@@ -22,7 +22,11 @@ public final class Migrations {
             // v1 → v2: cadeias de trabalho, livros/cartas, baús e mãos dos NPCs, ordens físicas e mochila. Campos novos; os padrões vêm do repair().
             root.addProperty("schemaVersion", 2);
         }
-        // if (v < 3) { ... }
+        if (v < 3) {
+            // v2 → v3: guerra e domínio — campanhas, cativos/escravizados (Npc.freedom), infâmia do reino. Campos novos; padrões no repair().
+            root.addProperty("schemaVersion", 3);
+        }
+        // if (v < 4) { ... }
     }
 
     /** Garante campos não nulos após carregar (Gson ignora inicializadores para campos ausentes em alguns casos). */
@@ -41,6 +45,16 @@ public final class Migrations {
         if (s.jobs == null) s.jobs = new LinkedHashMap<>();
         if (s.forcedChunks == null) s.forcedChunks = new LinkedHashSet<>();
         if (s.playerLastSeen == null) s.playerLastSeen = new HashMap<>();
+        if (s.campaigns == null) s.campaigns = new LinkedHashMap<>();
+        for (var c : s.campaigns.values()) {
+            if (c.members == null) c.members = new ArrayList<>();
+            if (c.log == null) c.log = new ArrayList<>();
+            if (c.result == null) c.result = "";
+            if (c.order == null) c.order = "";
+            if (c.kind == null) c.kind = com.kingdomsai.core.military.Campaign.Kind.ATTACK;
+            if (c.status == null) c.status = com.kingdomsai.core.military.Campaign.Status.FAILED;
+            if (c.number > s.campaignCounter) s.campaignCounter = c.number;
+        }
         for (var j : s.jobs.values()) {
             if (j.tasks == null) j.tasks = new ArrayList<>();
             if (j.log == null) j.log = new ArrayList<>();
@@ -86,6 +100,9 @@ public final class Migrations {
             if (n.carrying == null) n.carrying = new EnumMap<>(com.kingdomsai.core.work.Item.class);
             if (n.heldItem == null) n.heldItem = "";
             if (n.bag == null) n.bag = new TreeMap<>();
+            if (n.freedom == null) n.freedom = com.kingdomsai.core.npc.Freedom.FREE;
+            // quem estava numa campanha que sumiu do save volta para casa
+            if (n.campaignId != null && (!s.campaigns.containsKey(n.campaignId) || !s.campaigns.get(n.campaignId).live())) n.campaignId = null;
         }
         s.schemaVersion = WorldState.SCHEMA_VERSION;
     }

@@ -5,6 +5,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -52,6 +53,16 @@ public final class ServerEvents {
             ManagerMode.onLogin(sp);
             if (rt != null) rt.onPlayerJoin(sp);
         }
+    }
+
+    /** Chat comum vira ordem/fala aos súditos (a mensagem continua visível no chat). */
+    @SubscribeEvent
+    public static void onChat(ServerChatEvent e) {
+        ServerRuntime rt = ServerRuntime.get();
+        if (rt == null || !KingdomsConfig.AI_CHAT_ORDERS.get()) return;
+        ServerPlayer p = e.getPlayer();
+        String raw = e.getRawText();
+        p.server.execute(() -> rt.onChat(p, raw)); // o Core só roda na thread do servidor
     }
 
     @SubscribeEvent

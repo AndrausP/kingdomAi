@@ -13,6 +13,8 @@ public enum Permission {
     TRADE,
     DIPLOMACY,
     DECLARE_WAR,
+    /** Comandar tropas em campanha: escolher quem vai, atacar, recuar. */
+    COMMAND,
     PREACH,
     JUDGE
 }

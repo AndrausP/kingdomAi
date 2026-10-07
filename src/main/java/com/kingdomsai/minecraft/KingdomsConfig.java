@@ -23,6 +23,7 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.BooleanValue AI_FALLBACK_TO_RULES;
     public static final ModConfigSpec.ConfigValue<String> AI_CLAUDE_COMMAND;
     public static final ModConfigSpec.ConfigValue<String> AI_CLAUDE_MODEL;
+    public static final ModConfigSpec.BooleanValue AI_CHAT_ORDERS;
 
     // [simulation]
     public static final ModConfigSpec.IntValue STRATEGIC_TICK;
@@ -72,6 +73,8 @@ public final class KingdomsConfig {
                 .define("claude_command", "claude");
         AI_CLAUDE_MODEL = b.comment("provider = claude_code: haiku (rápido, recomendado) · sonnet · opus · fable — ou o nome completo do modelo.")
                 .define("claude_model", "haiku");
+        AI_CHAT_ORDERS = b.comment("Chat comum vira fala com os súditos: \"Rosalind, ataque Eldmark\", \"conselho, construam uma casa\", ou o súdito mais perto. Sem /k.")
+                .define("chat_orders", true);
         b.pop();
 
         b.push("simulation");
@@ -136,6 +139,7 @@ public final class KingdomsConfig {
         KEYS.put("ai.fallback_to_rules", AI_FALLBACK_TO_RULES);
         KEYS.put("ai.claude_command", AI_CLAUDE_COMMAND);
         KEYS.put("ai.claude_model", AI_CLAUDE_MODEL);
+        KEYS.put("ai.chat_orders", AI_CHAT_ORDERS);
         KEYS.put("simulation.npc_detail_radius", NPC_DETAIL_RADIUS);
         KEYS.put("simulation.max_active_npcs", MAX_ACTIVE_NPCS);
         KEYS.put("simulation.auto_found_on_join", AUTO_FOUND_ON_JOIN);

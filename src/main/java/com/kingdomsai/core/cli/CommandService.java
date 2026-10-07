@@ -53,7 +53,8 @@ public final class CommandService {
     public static final List<String> SUBCOMMANDS = List.of(
             "help", "found", "status", "npc", "say", "assign", "deadline", "cancel", "blueprint", "build", "blueprints", "projects", "army", "economy", "territory",
             "claim", "tax", "law", "diplomacy", "war", "order", "ai", "events", "chronicle", "debug", "replay", "rivals",
-            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag", "report", "mark", "marks");
+            "chains", "chain", "books", "book", "call", "follow", "dismiss", "village", "job", "jobs", "bag", "report", "mark", "marks",
+            "attack", "retreat", "settle", "campaigns", "captives", "purge", "enslave", "free", "confirm", "abort");
 
     private final KingdomsCore core;
     private Notifier notifier = (p, l) -> {};
@@ -73,6 +74,66 @@ public final class CommandService {
 
     public UUID selected(UUID player) {
         return selectedNpc.get(player);
+    }
+
+    /**
+     * Chat comum (sem /k): "Rosalind, ataque Eldmark" fala com a Rosalind; "Capitão, ..." com o capitão; "conselho, ..." com o conselho;
+     * "soldados, ..." com quem comanda; sem nome, com o súdito selecionado/chamado (até 24 blocos) ou o mais perto (6 blocos).
+     * "confirmo"/"desisto" respondem à ordem que espera. Retorna false quando é só conversa entre jogadores.
+     */
+    public boolean chat(UUID player, String playerName, Pos pos, String text, List<String> out) {
+        Kingdom k = core.kingdomOfPlayer(player);
+        if (k == null || text == null || text.isBlank() || text.startsWith("/")) return false;
+        if (pos != null) core.updatePlayerPos(player, pos);
+        String t = text.trim();
+        Npc adv = core.advisor().advisorNpc(k);
+        if (core.dialogue().handlePending(player, adv != null ? adv.name + " (Conselheiro)" : "Conselho", t,
+                reply -> notifier.send(player, render(reply)))) return true;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*([\\p{L}][\\p{L}' -]{1,30}?)\\s*[,:!]\\s*(.+)$").matcher(t);
+        if (m.find()) {
+            String who = m.group(1).trim(), rest = m.group(2).trim();
+            String wn = Text.norm(who);
+            if (wn.matches("(meu |minha )?(conselho|conselheiro|conselheira|reino|corte|todos|povo|senhores)")) {
+                out.add("‹Ordem real› " + rest);
+                core.dialogue().order(player, rest, reply -> notifier.send(player, render(reply)));
+                return true;
+            }
+            Npc n = null;
+            if (wn.matches("(soldados|guardas|exercito|tropa|tropas|homens)")) n = core.warfare().commander(k, null);
+            if (n == null) n = core.findNpc(k.id, who);
+            if (n == null) {
+                String[] parts = wn.split("\\s+"); // "capitão Rosalind" / "general Aldo"
+                n = core.findNpc(k.id, parts[parts.length - 1]);
+                Office o = Office.parse(parts[0]);
+                if (n == null && o != null && o != Office.NONE && o != Office.KING)
+                    n = core.citizens(k.id).stream().filter(x -> x.office == o).findFirst().orElse(null);
+            }
+            if (n != null && n.alive) {
+                selectedNpc.put(player, n.id);
+                core.dialogue().talk(player, playerName, n, rest, reply -> notifier.send(player, render(reply)));
+                return true;
+            }
+        }
+        Npc sel = core.npc(selectedNpc.get(player));
+        if (sel != null && sel.alive && k.id.equals(sel.kingdomId) && sel.pos != null && pos != null
+                && (sel.pos.distXZ(pos) <= 24 || core.scheduler().isSummoned(sel))) {
+            core.dialogue().talk(player, playerName, sel, t, reply -> notifier.send(player, render(reply)));
+            return true;
+        }
+        Npc near = null;
+        double best = 6.5;
+        if (pos != null)
+            for (Npc n : core.citizens(k.id))
+                if (n.pos != null && n.pos.distXZ(pos) < best && Math.abs(n.pos.y() - pos.y()) < 6) {
+                    best = n.pos.distXZ(pos);
+                    near = n;
+                }
+        if (near != null) {
+            selectedNpc.put(player, near.id);
+            core.dialogue().talk(player, playerName, near, t, reply -> notifier.send(player, render(reply)));
+            return true;
+        }
+        return false;
     }
 
     public List<String> execute(UUID player, String playerName, Pos playerPos, String line) {
@@ -223,6 +284,54 @@ public final class CommandService {
             case "chain", "cadeia", "rotina" -> chain(k, player, a, out);
             case "books", "livros", "biblioteca" -> books(k, out);
             case "book", "livro" -> book(k, rest(a, 1), out);
+            case "attack", "atacar", "invadir", "ocupar" -> {
+                if (a.length < 2) {
+                    out.add("Uso: attack <reino | aqui | x z> [soldados]");
+                    return;
+                }
+                List<String> kv = new ArrayList<>();
+                String last = a[a.length - 1];
+                boolean count = a.length > 2 && last.matches("\\d{1,2}") && !rest(a, 1).matches("-?\\d+\\s+-?\\d+");
+                kv.addAll(List.of("target", count ? String.join(" ", Arrays.copyOfRange(a, 1, a.length - 1)) : rest(a, 1)));
+                if (count) kv.addAll(List.of("amount", last));
+                act(k, player, ActionType.ATTACK, out, kv.toArray(String[]::new));
+            }
+            case "retreat", "recuar", "retirada" -> act(k, player, ActionType.RETREAT, out, "campaign", a.length > 1 ? a[1] : "");
+            case "settle", "colonizar" -> act(k, player, ActionType.SETTLE, out, "amount", a.length > 1 && a[1].matches("\\d+") ? a[1] : "3",
+                    "target", a.length > 2 ? rest(a, 2) : a.length > 1 && !a[1].matches("\\d+") ? rest(a, 1) : "aqui");
+            case "campaigns", "campanhas", "tropas" -> campaigns(k, out);
+            case "captives", "cativos", "presos" -> {
+                out.add("# Cativos e escravizados de " + k.name);
+                int n = 0;
+                for (Npc x : core.citizens(k.id))
+                    if (!x.isFree()) {
+                        Kingdom from = core.kingdom(x.originKingdomId);
+                        out.add("  " + x.name + " — " + x.freedom.display + (x.freedom == com.kingdomsai.core.npc.Freedom.ENSLAVED ? " (" + x.profession.display + ")" : "")
+                                + (from != null ? " · veio de " + from.name : ""));
+                        n++;
+                    }
+                if (n == 0) out.add("Ninguém preso ou escravizado.");
+                else out.add("enslave cativos [profissão] · free todos [casa] · purge cativos");
+            }
+            case "purge", "massacre", "executar" -> act(k, player, ActionType.PURGE, out, "target", a.length > 1 ? rest(a, 1) : "");
+            case "enslave", "escravizar" -> {
+                List<String> kv = new ArrayList<>(List.of("target", a.length > 1 ? a[1] : "cativos"));
+                if (a.length > 2) kv.addAll(List.of("work", a[2]));
+                act(k, player, ActionType.ENSLAVE, out, kv.toArray(String[]::new));
+            }
+            case "free", "libertar" -> {
+                boolean home = a.length > 2 && Text.norm(a[a.length - 1]).matches("casa|home|voltar");
+                act(k, player, ActionType.FREE, out, "target", a.length > 1 ? (home ? String.join(" ", Arrays.copyOfRange(a, 1, a.length - 1)) : rest(a, 1)) : "todos",
+                        "home", String.valueOf(home));
+            }
+            case "confirm", "confirmar", "confirmo" -> {
+                var pend = core.actions().pending(player);
+                out.addAll(com.kingdomsai.core.llm.DialogueService.resultLines(pend == null ? "CONFIRMAR" : pend.request().type().name(), core.actions().confirm(player)));
+            }
+            case "abort", "desistir", "desisto" -> {
+                var pend = core.actions().pending(player);
+                out.addAll(com.kingdomsai.core.llm.DialogueService.resultLines(pend == null ? "DESISTIR" : pend.request().type().name(), core.actions().abort(player)));
+            }
             case "rivals" -> {
                 int n = spawnRivals(k, a.length > 1 ? parseInt(a[1], 1) : 1);
                 out.add(n > 0 ? "✓ " + n + " reino(s) rival(is) fundado(s)." : "✗ Não foi possível criar rivais.");
@@ -245,7 +354,10 @@ public final class CommandService {
         out.add("say <texto> — fala com o NPC selecionado (botão direito nele)");
         out.add("build <planta> [qtd] [para <nome>] [prazo 5m|1d] · build custom tipo=casa largura=9 andares=2 parede=pedra");
         out.add("projects · deadline <nº> <tempo> · cancel <nº> · blueprints · blueprint design|show|delete|materials");
-        out.add("army · army recruit <n> · army release <n> [profissão]");
+        out.add("army · army recruit [n] (sem n o general decide) · army release <n> [profissão] — exército não custa ouro, custa comida");
+        out.add("attack <reino|aqui|x z> [n] · retreat [nº] · campaigns · settle [n] (colonos para onde você está)");
+        out.add("captives · enslave <cativos|nome> [profissão] · free <escravos|cativos|nome|todos> [casa] · purge <vila|cativos|nome>");
+        out.add("confirm / abort — confirma ou desiste da ordem irreversível que está esperando (também: \"confirmo\"/\"desisto\" no chat)");
         out.add("economy · territory · claim [n] · tax <0-4|up|down> · law <conscription|migration> <on|off>");
         out.add("diplomacy list · diplomacy treaty <reino> <tipo> · diplomacy trade <reino> <qtd> <recurso> <qtd> <recurso>");
         out.add("diplomacy gift <reino> <qtd> <recurso> · war declare|peace <reino>");
@@ -643,11 +755,40 @@ public final class CommandService {
             act(k, player, ActionType.RELEASE, out, kv.toArray(String[]::new));
             return;
         }
+        if (a.length >= 2 && (a[1].startsWith("atac") || a[1].startsWith("attack") || a[1].startsWith("invad"))) {
+            out.addAll(execute(player, k.rulerName, core.playerPos(player) == null ? k.center : core.playerPos(player), "attack " + rest(a, 2)));
+            return;
+        }
         out.add("# Exército de " + k.name);
-        out.add("Soldados " + core.count(k.id, Profession.SOLDIER) + " · Guardas " + core.count(k.id, Profession.GUARD)
-                + " · Armas " + Text.fmt(k.get(ResourceType.WEAPONS)) + " · Quartéis " + core.completedOf(k.id, "barracks"));
-        for (Npc n : core.citizens(k.id)) if (n.profession.isMilitary()) out.add("  " + n.displayName() + " · " + n.activity.display);
-        out.add("(Batalhas, legiões e logística: Fase 9.) army recruit <n> · army release <n> [profissão]");
+        int sol = core.count(k.id, Profession.SOLDIER), gua = core.count(k.id, Profession.GUARD);
+        out.add("Soldados " + sol + " · Guardas " + gua + " · Armas " + Text.fmt(k.get(ResourceType.WEAPONS)) + " · Quartéis " + core.completedOf(k.id, "barracks"));
+        out.add("Custo: não gasta ouro; come " + Text.fmt(sol * com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD
+                + gua * com.kingdomsai.core.military.MilitarySystem.GUARD_FOOD) + " de comida por ciclo (soldado "
+                + Text.fmt(com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD) + " · em campanha "
+                + Text.fmt(com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD + com.kingdomsai.core.military.MilitarySystem.CAMPAIGN_EXTRA_FOOD)
+                + " · guarda " + Text.fmt(com.kingdomsai.core.military.MilitarySystem.GUARD_FOOD) + "; civil 1).");
+        var cmd = core.warfare().commander(k, null);
+        if (cmd != null) out.add("Quem decide quem vai: " + cmd.displayName());
+        for (Npc n : core.citizens(k.id)) if (n.profession.isMilitary())
+            out.add("  " + n.displayName() + " · " + (n.campaignId != null ? n.currentTask : n.activity.display) + " · lealdade " + n.loyalty);
+        campaigns(k, out);
+        out.add("army recruit [n] · army release <n> [profissão] · attack <reino|aqui> [n] · retreat · settle [n]");
+    }
+
+    private void campaigns(Kingdom k, List<String> out) {
+        var list = core.warfare().campaigns(k.id);
+        if (list.isEmpty()) return;
+        out.add("# Tropas e colonos");
+        for (var c : list.subList(Math.max(0, list.size() - 6), list.size())) {
+            Kingdom t = core.kingdom(c.targetKingdomId);
+            String eta = c.status == com.kingdomsai.core.military.Campaign.Status.MARCHING ? " · chega em " + Math.max(0, (c.arriveTick - core.tick()) / 20) + " s"
+                    : c.status == com.kingdomsai.core.military.Campaign.Status.RETURNING ? " · em casa em " + Math.max(0, (c.returnTick - core.tick()) / 20) + " s" : "";
+            out.add((c.live() ? "⚔ " : c.status == com.kingdomsai.core.military.Campaign.Status.DONE ? "✓ " : "✗ ") + "#" + c.number + " " + c.kind.display
+                    + " → " + (t == null ? "terra livre" : t.name) + " (" + c.target.x() + ", " + c.target.z() + ") · " + c.status.display + eta
+                    + " · " + c.members.size() + " pessoa(s)" + (c.cellsTaken > 0 ? " · " + c.cellsTaken + " célula(s)" : "")
+                    + (c.captives > 0 ? " · " + c.captives + " cativo(s)" : ""));
+            if (!c.result.isBlank()) out.add("   " + c.result);
+        }
     }
 
     private void economy(Kingdom k, List<String> out) {
@@ -673,7 +814,9 @@ public final class CommandService {
         Kingdom hk = core.kingdom(here);
         out.add("Você está em: " + (hk == null ? "terra sem dono" : hk.name)
                 + (hk == k ? " · " + (int) t.distanceToBorder(k.id, pos) + " blocos da fronteira" : ""));
-        out.add("Fronteira livre para expansão: " + t.claimableFrontier(k.id, k.center).size() + " células (claim custa 40 de ouro).");
+        out.add("Terra livre: reivindicar não custa nada até " + core.warfare().claimLimit(k) + " células (30 + 2 por morador livre + 3 por militar); "
+                + "restam " + core.warfare().freeClaims(k) + ". Fronteira livre: " + t.claimableFrontier(k.id, k.center).size() + " células.");
+        out.add("Além do limite a terra se toma: settle [n] (colonos para onde você está) · attack <reino|aqui> (tropas).");
         for (Kingdom o : core.state().kingdoms.values())
             if (o != k) out.add(o.name + " fica a " + (int) o.center.distXZ(k.center) + " blocos ("
                     + direction(k.center, o.center) + ")" + (t.bordersTouch(k.id, o.id) ? " — FRONTEIRA COMUM" : ""));

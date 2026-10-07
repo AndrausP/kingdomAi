@@ -133,6 +133,13 @@ public final class ServerRuntime {
         return cli;
     }
 
+    /** Chat comum: "Rosalind, ataque Eldmark" / "conselho, ..." / súdito perto. Conversa entre jogadores passa direto. */
+    public void onChat(ServerPlayer p, String text) {
+        List<String> out = new ArrayList<>();
+        if (cli.chat(p.getUUID(), p.getGameProfile().getName(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()), text, out) && !out.isEmpty())
+            notify(p.getUUID(), out);
+    }
+
     // ------------------------------------------------------------------ tick
 
     public void tick() {

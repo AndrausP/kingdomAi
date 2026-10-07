@@ -60,6 +60,12 @@ public final class Npc {
     public UUID jobId;
     /** Aprendeu a ler (lendo ou escrevendo livros). */
     public boolean literate;
+    /** Livre, cativo de guerra ou escravizado (v3). */
+    public Freedom freedom = Freedom.FREE;
+    /** Campanha militar/colonização de que participa (v3). */
+    public UUID campaignId;
+    /** Reino de onde veio (cativos de guerra) — para devolvê-los se forem libertados (v3). */
+    public UUID originKingdomId;
     /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */
     public transient boolean onDuty;
 
@@ -81,8 +87,14 @@ public final class Npc {
     }
 
     public String title() {
+        if (freedom == Freedom.CAPTIVE) return "Cativo";
+        if (freedom == Freedom.ENSLAVED) return profession.display + ", escravizado";
         if (office != Office.NONE) return office.display;
         return profession.display;
+    }
+
+    public boolean isFree() {
+        return freedom == null || freedom == Freedom.FREE;
     }
 
     public String displayName() {

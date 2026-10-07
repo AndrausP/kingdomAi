@@ -29,9 +29,52 @@ public final class DialogueService {
         this.core = core;
     }
 
+    /** "Confirmo"/"desisto" para a ordem irreversível que está esperando (massacre, ataque sem piedade). */
+    private static final String CONFIRM = "(sim,? )?(eu )?(confirmo|confirmado|confirma|confirmar|pode cumprir|cumpram|cumpra a ordem|cumpram a ordem|executem a ordem|e uma ordem|faca isso|facam isso)( majestade)?[.!]*";
+    private static final String ABORT = "(nao,? )?(desisto|desista|cancele a ordem|cancela a ordem|cancelem a ordem|esquece|esqueca|esquecam|aborte|abortem|nao facam|nao faca)( isso)?[.!]*";
+    /** Ordens explícitas do rei que não dependem do humor do modelo: se a IA não as propôs, as regras completam. */
+    private static final java.util.Set<com.kingdomsai.core.action.ActionType> EXPLICIT = java.util.EnumSet.of(
+            com.kingdomsai.core.action.ActionType.ATTACK, com.kingdomsai.core.action.ActionType.OCCUPY, com.kingdomsai.core.action.ActionType.RETREAT,
+            com.kingdomsai.core.action.ActionType.SETTLE, com.kingdomsai.core.action.ActionType.PURGE, com.kingdomsai.core.action.ActionType.ENSLAVE,
+            com.kingdomsai.core.action.ActionType.FREE, com.kingdomsai.core.action.ActionType.RECRUIT);
+
+    /** Trata "confirmo"/"desisto" sem chamar a IA. true = tratado. */
+    public boolean handlePending(UUID playerId, String speaker, String text, Consumer<Reply> callback) {
+        var p = core.actions().pending(playerId);
+        if (p == null) return false;
+        String t = Text.norm(text).replaceAll("^(majestade|senhor|ok)[,! ]+", "");
+        boolean yes = t.matches(CONFIRM), no = t.matches(ABORT);
+        if (!yes && !no) return false;
+        String type = p.request().type().name();
+        ActionResult r = yes ? core.actions().confirm(playerId) : core.actions().abort(playerId);
+        String said = !yes ? "Como quiser, Majestade. Ninguém fará nada." : r.ok() ? "Está feito, Majestade." : "Majestade... não foi possível.";
+        callback.accept(new Reply(speaker, said, resultLines(type, r), "regras", false, ""));
+        return true;
+    }
+
+    /** Junta à resposta da IA as ordens explícitas de guerra que as regras reconhecem e a IA deixou de fora. */
+    private Plan withExplicitOrders(Kingdom k, Npc speaker, String text, Plan plan) {
+        Plan rules;
+        try {
+            rules = new RuleInterpreter(core).interpret(k, speaker, text);
+        } catch (RuntimeException e) {
+            return plan;
+        }
+        List<Plan.PlannedAction> merged = new ArrayList<>(plan.actions());
+        for (Plan.PlannedAction a : rules.actions()) {
+            if (a.type() == null || !EXPLICIT.contains(a.type())) continue;
+            boolean present = plan.actions().stream().anyMatch(x -> x.type() == a.type()
+                    || (x.type() == com.kingdomsai.core.action.ActionType.ATTACK || x.type() == com.kingdomsai.core.action.ActionType.OCCUPY)
+                    && (a.type() == com.kingdomsai.core.action.ActionType.ATTACK || a.type() == com.kingdomsai.core.action.ActionType.OCCUPY));
+            if (!present) merged.add(a);
+        }
+        return merged.size() == plan.actions().size() ? plan : new Plan(plan.reply(), merged);
+    }
+
     public void talk(UUID playerId, String playerName, Npc npc, String text, Consumer<Reply> callback) {
         Kingdom pk = core.kingdomOfPlayer(playerId);
         boolean own = pk != null && pk.id.equals(npc.kingdomId);
+        if (own && handlePending(playerId, npc.name, text, callback)) return;
         npc.level = npc.level.atLeast(IntelligenceLevel.CONTEXTUAL);
         npc.remember(core.tick(), (own ? "O rei" : "O rei estrangeiro " + playerName) + " falou comigo: \"" + Text.truncate(text, 80) + "\"",
                 own ? 40 : 55, playerId, "rei", "conversa");
@@ -42,7 +85,9 @@ public final class DialogueService {
         npc.lastLlmCall = "npc_dialogue @" + core.tick();
         UUID kingdomForActions = own ? pk.id : null;
         core.llm().submit(req).thenAcceptAsync(res -> {
-            List<String> lines = kingdomForActions == null ? List.of() : execute(kingdomForActions, playerId, res.plan(), npc, text);
+            Plan plan = kingdomForActions == null || res.fallback() || "regras".equals(res.provider()) || "mock".equals(res.provider())
+                    ? res.plan() : withExplicitOrders(pk, npc, text, res.plan());
+            List<String> lines = kingdomForActions == null ? List.of() : execute(kingdomForActions, playerId, plan, npc, text);
             npc.level = npc.level.atLeast(IntelligenceLevel.CONTEXTUAL);
             npc.lastDecision = res.plan().toJson();
             callback.accept(new Reply(npc.name, res.plan().reply(), lines, res.provider(), res.fallback(), res.note()));
@@ -59,9 +104,11 @@ public final class DialogueService {
             return;
         }
         Npc adv = core.advisor().advisorNpc(k);
+        if (handlePending(playerId, adv != null ? adv.name + " (Conselheiro)" : "Conselho", text, callback)) return;
         LlmRequest req = core.contextBuilder().councilOrder(k, text);
         core.llm().submit(req).thenAcceptAsync(res -> {
-            List<String> lines = execute(k.id, playerId, res.plan(), null, text);
+            Plan plan = res.fallback() || "mock".equals(res.provider()) ? res.plan() : withExplicitOrders(k, null, text, res.plan());
+            List<String> lines = execute(k.id, playerId, plan, null, text);
             if (adv != null) adv.lastDecision = res.plan().toJson();
             callback.accept(new Reply(adv != null ? adv.name + " (Conselheiro)" : "Conselho", res.plan().reply(), lines,
                     res.provider(), res.fallback(), res.note()));
@@ -90,6 +137,13 @@ public final class DialogueService {
                 params.putIfAbsent("order", Text.truncate(orderText, 120));
             }
             var t = a.type();
+            // falando com o general/capitão: ele é quem decide quem vai
+            if ((t == com.kingdomsai.core.action.ActionType.ATTACK || t == com.kingdomsai.core.action.ActionType.OCCUPY
+                    || t == com.kingdomsai.core.action.ActionType.RECRUIT) && listener != null && params.get("npc") == null
+                    && listener.office.allows(com.kingdomsai.core.npc.Permission.COMMAND) && listener.office != com.kingdomsai.core.npc.Office.KING)
+                params.put("npc", listener.name);
+            if (t == com.kingdomsai.core.action.ActionType.ATTACK || t == com.kingdomsai.core.action.ActionType.OCCUPY
+                    || t == com.kingdomsai.core.action.ActionType.SETTLE) params.putIfAbsent("order", Text.truncate(orderText, 120));
             if ((t == com.kingdomsai.core.action.ActionType.SUMMON || t == com.kingdomsai.core.action.ActionType.FOLLOW
                     || t == com.kingdomsai.core.action.ActionType.DISMISS) && listener != null && params.get("npc") == null)
                 params.put("npc", listener.name);

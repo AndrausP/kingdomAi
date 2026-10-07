@@ -36,6 +36,8 @@ public final class Kingdom {
 
     /** Reputação perante o mundo. */
     public double honor = 60;
+    /** Fama de crueldade (massacres, escravidão): 0..100, cai devagar. Pesa na estabilidade e na diplomacia (v3). */
+    public double infamy = 0;
     public double reliability = 60;
 
     /** Pontos marcados pelo rei com a Bandeira do Reino (spawn, praça, mina, bosque). */

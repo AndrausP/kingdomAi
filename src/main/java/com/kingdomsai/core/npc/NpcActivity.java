@@ -10,7 +10,9 @@ public enum NpcActivity {
     GO_HOME("indo para casa"),
     SLEEP("dormindo"),
     TALKING("falando com o rei"),
-    SUMMONED("atendendo ao chamado do rei");
+    SUMMONED("atendendo ao chamado do rei"),
+    MARCH("em campanha"),
+    IMPRISONED("preso");
 
     public final String display;
 

@@ -139,14 +139,40 @@ public class ManagerScreen extends Screen {
                     b -> send("found"), GOOD));
             return;
         }
+        if (!str(data, "pending").isBlank()) {
+            addRenderableWidget(new FlatButton(cx1 - 168, cy0, 80, 15, Component.literal("Confirmar"), b -> send("confirm"), BAD));
+            addRenderableWidget(new FlatButton(cx1 - 84, cy0, 80, 15, Component.literal("Desistir"), b -> send("abort"), GOOD));
+        }
         switch (tab) {
             case BUILD -> buildTab();
             case ARMY -> {
                 int y = cy0 + 20;
-                btn("Recrutar 1 (15 ouro)", "army recruit 1", cx0 + 4, y, 128, ACCENT);
-                btn("Recrutar 3", "army recruit 3", cx0 + 136, y, 80, ACCENT);
+                JsonObject k = obj(data, "kingdom");
+                btn("Convocar 1", "army recruit 1", cx0 + 4, y, 84, ACCENT);
+                btn("Convocar 3", "army recruit 3", cx0 + 92, y, 84, ACCENT);
+                btn("O comandante decide", "army recruit", cx0 + 180, y, 124, ACCENT);
                 btn("Liberar 1 → fazenda", "army release 1 fazendeiro", cx0 + 4, y + 20, 128, DIM);
                 btn("Liberar 3 → fazenda", "army release 3 fazendeiro", cx0 + 136, y + 20, 128, DIM);
+                boolean live = false;
+                for (JsonElement e : arr(k, "campaigns")) live |= e.getAsJsonObject().get("live").getAsBoolean();
+                if (live) btn("Recuar a tropa", "retreat", cx0 + 268, y + 20, 100, WARN);
+                // vizinhos: atacar (o comandante escolhe quem vai e o objetivo)
+                int ny = cy1 - 44;
+                int nx = cx0 + 4;
+                for (JsonElement e : arr(data, "kingdoms")) {
+                    JsonObject o = e.getAsJsonObject();
+                    if (o.get("me").getAsBoolean() || o.get("pop").getAsInt() == 0) continue;
+                    String first = o.get("name").getAsString();
+                    int w = Math.min(150, font.width("Atacar " + first) + 14);
+                    btn("Atacar " + first, "attack " + first, nx, ny, w, BAD);
+                    nx += w + 4;
+                    if (nx > cx1 - 120) break;
+                }
+                if (k.get("captives").getAsInt() > 0) {
+                    btn("Escravizar cativos → mina", "enslave cativos minerador", cx0 + 4, cy1 - 24, 160, WARN);
+                    btn("Libertar cativos", "free cativos", cx0 + 168, cy1 - 24, 110, GOOD);
+                } else if (k.get("enslaved").getAsInt() > 0)
+                    btn("Libertar escravizados", "free todos", cx0 + 4, cy1 - 24, 140, GOOD);
             }
             case ECONOMY -> {
                 String[][] jobs = {{"Fazendeiro", "farmer"}, {"Lenhador", "lumberjack"}, {"Minerador", "miner"},
@@ -158,8 +184,17 @@ public class ManagerScreen extends Screen {
             case DIPLOMACY -> diplomacyTab();
             case POPULATION -> populationTab();
             case TERRITORY -> {
-                btn("Expandir 1 célula (40 ouro)", "claim 1", cx0 + 4, cy0 + 60, 160, ACCENT);
-                btn("Expandir 3 células", "claim 3", cx0 + 168, cy0 + 60, 110, ACCENT);
+                btn("Reivindicar 1 (grátis)", "claim 1", cx0 + 4, cy0 + 60, 140, ACCENT);
+                btn("Reivindicar 3", "claim 3", cx0 + 148, cy0 + 60, 96, ACCENT);
+                btn("Colonizar onde estou (3)", "settle 3", cx0 + 248, cy0 + 60, 150, GOOD);
+                int ny = cy0 + 116;
+                for (JsonElement e : arr(data, "kingdoms")) {
+                    JsonObject o = e.getAsJsonObject();
+                    if (o.get("me").getAsBoolean() || o.get("pop").getAsInt() == 0) continue;
+                    btn("Invadir", "attack " + o.get("name").getAsString(), cx0 + 250, ny - 3, 60, BAD);
+                    ny += 12;
+                    if (ny > cy1 - 20) break;
+                }
             }
             case LAWS -> {
                 JsonObject k = obj(data, "kingdom");
@@ -609,6 +644,7 @@ public class ManagerScreen extends Screen {
                 case RELIGION -> drawReligion(g);
                 case CONFIG -> drawConfig(g);
             }
+            drawPending(g);
             g.disableScissor();
         }
         // feedback do último comando
@@ -878,28 +914,48 @@ public class ManagerScreen extends Screen {
     }
 
     private void drawArmy(GuiGraphics g) {
-        title(g, "Exército");
+        title(g, "Exército — não custa ouro, custa comida");
         int y = cy0 + 64;
         JsonObject k = obj(data, "kingdom");
-        g.drawString(font, "Militares (soldados + guardas): " + k.get("military").getAsInt(), cx0, y, TEXT);
+        g.drawString(font, "Militares: " + k.get("military").getAsInt() + String.format(Locale.ROOT, "  ·  comem %.0f por ciclo", k.get("armyFood").getAsDouble())
+                + (str(k, "commander").isBlank() ? "" : "  ·  decide: " + str(k, "commander")), cx0, y, TEXT);
         y += 12;
         for (JsonElement e : arr(data, "npcs")) {
             JsonObject n = e.getAsJsonObject();
             String p = n.get("prof").getAsString();
             if (!n.get("mine").getAsBoolean() || !(p.equals("SOLDIER") || p.equals("GUARD"))) continue;
-            g.drawString(font, "  " + n.get("name").getAsString() + " — " + n.get("title").getAsString() + " · " + n.get("act").getAsString(), cx0, y, DIM);
+            if (y > cy0 + 120) break;
+            g.drawString(font, font.plainSubstrByWidth("  " + n.get("name").getAsString() + " — " + n.get("title").getAsString() + " · " + n.get("act").getAsString(), cx1 - cx0), cx0, y, DIM);
             y += 10;
         }
-        y += 6;
-        g.drawString(font, "Vizinhos:", cx0, y, ACCENT);
-        y += 11;
-        for (JsonElement e : arr(data, "kingdoms")) {
-            JsonObject o = e.getAsJsonObject();
-            if (o.get("me").getAsBoolean()) continue;
-            g.drawString(font, "  " + o.get("name").getAsString() + ": " + o.get("mil").getAsInt() + " militares", cx0, y, TEXT);
+        y += 4;
+        for (JsonElement e : arr(k, "campaigns")) {
+            JsonObject c = e.getAsJsonObject();
+            boolean live = c.get("live").getAsBoolean();
+            String line = (live ? "⚔ " : "") + "#" + c.get("n").getAsInt() + " " + c.get("kind").getAsString() + " → " + c.get("target").getAsString()
+                    + " · " + c.get("status").getAsString() + (c.get("eta").getAsLong() > 0 ? " (" + c.get("eta").getAsLong() + " s)" : "")
+                    + " · " + c.get("people").getAsInt() + " pessoas";
+            g.drawString(font, font.plainSubstrByWidth(line, cx1 - cx0), cx0, y, live ? WARN : MUTED);
             y += 10;
+            String res = c.get("result").getAsString();
+            if (!res.isBlank() && y < cy1 - 60) {
+                g.drawString(font, font.plainSubstrByWidth("   " + res, cx1 - cx0), cx0, y, res.startsWith("✓") ? GOOD : BAD);
+                y += 10;
+            }
+            if (y > cy1 - 60) break;
         }
-        g.drawString(font, "Legiões, batalhas e logística chegam na Fase 9.", cx0, cy1 - 26, MUTED);
+        int cap = k.get("captives").getAsInt(), sl = k.get("enslaved").getAsInt();
+        if (cap + sl > 0)
+            g.drawString(font, "Cativos: " + cap + " · Escravizados: " + sl + String.format(Locale.ROOT, " · Infâmia %.0f", k.get("infamy").getAsDouble()),
+                    cx0, cy1 - 36, WARN);
+    }
+
+    /** Ordem irreversível esperando "confirmo" (massacre, ataque sem piedade). */
+    private void drawPending(GuiGraphics g) {
+        String p = str(data, "pending");
+        if (p.isBlank()) return;
+        g.fill(cx0 - 3, cy0 - 1, cx1 + 1, cy0 + 16, 0xEE3a0d0d);
+        g.drawString(font, font.plainSubstrByWidth(p, cx1 - cx0 - 176), cx0 + 2, cy0 + 4, BAD);
     }
 
     private void drawEconomy(GuiGraphics g) {
@@ -993,16 +1049,20 @@ public class ManagerScreen extends Screen {
     private void drawTerritory(GuiGraphics g) {
         int y = title(g, "Território — células de " + data.get("cellSize").getAsInt() + "×" + data.get("cellSize").getAsInt() + " blocos");
         JsonObject k = obj(data, "kingdom");
-        g.drawString(font, "Células: " + k.get("cells").getAsInt() + String.format(Locale.ROOT, "  ·  Área: %.2f km²", k.get("area").getAsDouble()), cx0, y, TEXT);
+        g.drawString(font, "Células: " + k.get("cells").getAsInt() + "/" + k.get("claimLimit").getAsInt()
+                + String.format(Locale.ROOT, "  ·  Área: %.2f km²", k.get("area").getAsDouble()), cx0, y, TEXT);
         y += 12;
-        g.drawString(font, "Expandir cria fronteiras: vizinhos expansionistas ficam hostis.", cx0, y, DIM);
-        y += 70;
+        g.drawString(font, font.plainSubstrByWidth("Terra livre é grátis até o limite (30 + 2 por morador + 3 por militar). Além disso, se toma:", cx1 - cx0), cx0, y, DIM);
+        y += 10;
+        g.drawString(font, font.plainSubstrByWidth("colonos vão morar lá (Colonizar) ou tropas invadem (Invadir) — inclusive terra de outro reino.", cx1 - cx0), cx0, y, DIM);
+        y += 60;
         for (JsonElement e : arr(data, "kingdoms")) {
             JsonObject o = e.getAsJsonObject();
             if (o.get("me").getAsBoolean()) continue;
             double dx = o.get("cx").getAsInt() - k.get("cx").getAsInt(), dz = o.get("cz").getAsInt() - k.get("cz").getAsInt();
-            g.drawString(font, o.get("name").getAsString() + String.format(Locale.ROOT, " — a %.0f blocos", Math.hypot(dx, dz)), cx0, y, TEXT);
-            y += 10;
+            if (o.get("pop").getAsInt() == 0) continue;
+            g.drawString(font, o.get("name").getAsString() + String.format(Locale.ROOT, " — a %.0f blocos · %d militares", Math.hypot(dx, dz), o.get("mil").getAsInt()), cx0, y, TEXT);
+            y += 12;
         }
     }
 

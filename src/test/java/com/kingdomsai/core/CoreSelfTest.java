@@ -204,7 +204,12 @@ public final class CoreSelfTest {
         passed += va[0];
         failed += va[1];
 
-        // 16. Claude Code como IA (processo falso e script)
+        // 16. Guerra e domínio: exército, terra, colonos, batalhas, cativos, escravidão, massacre
+        int[] mi = MilitarySelfTest.run();
+        passed += mi[0];
+        failed += mi[1];
+
+        // 17. Claude Code como IA (processo falso e script)
         int[] cc = ClaudeCodeSelfTest.run();
         passed += cc[0];
         failed += cc[1];

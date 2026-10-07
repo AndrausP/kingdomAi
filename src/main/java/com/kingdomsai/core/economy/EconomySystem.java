@@ -78,8 +78,14 @@ public final class EconomySystem {
                 add(d, ResourceType.FOOD, -FOOD_PER_CITIZEN);
                 continue;
             }
+            // Cativo não trabalha e come pouco; escravizado trabalha à força (rende 60%) e come menos.
+            if (n.freedom == com.kingdomsai.core.npc.Freedom.CAPTIVE) {
+                add(d, ResourceType.FOOD, -0.6);
+                continue;
+            }
+            boolean enslaved = n.freedom == com.kingdomsai.core.npc.Freedom.ENSLAVED;
             double skill = 0.8 + n.trait(Trait.DISCIPLINE) / 250.0;
-            double f = skill * moraleFactor * (n.hunger < 20 ? 0.5 : 1.0);
+            double f = skill * moraleFactor * (n.hunger < 20 ? 0.5 : 1.0) * (enslaved ? 0.6 : 1.0);
             switch (n.profession) {
                 case FARMER -> {
                     farmers++;
@@ -100,14 +106,14 @@ public final class EconomySystem {
                 }
                 case MERCHANT -> add(d, ResourceType.GOLD, 1.5 * f * (0.5 + k.personality.commerce / 100.0));
                 case PEASANT -> add(d, ResourceType.FOOD, 0.8 * f);
-                case SOLDIER, GUARD -> {
-                    add(d, ResourceType.FOOD, -0.5);
-                    add(d, ResourceType.GOLD, -0.4);
-                }
+                // Exército não custa ouro: custa comida. Soldado come 2 (3 em campanha: carroças até o front); guarda 1,5.
+                case SOLDIER -> add(d, ResourceType.FOOD, -(com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD - FOOD_PER_CITIZEN)
+                        - (n.campaignId != null ? com.kingdomsai.core.military.MilitarySystem.CAMPAIGN_EXTRA_FOOD : 0));
+                case GUARD -> add(d, ResourceType.FOOD, -(com.kingdomsai.core.military.MilitarySystem.GUARD_FOOD - FOOD_PER_CITIZEN));
                 default -> {
                 }
             }
-            add(d, ResourceType.FOOD, -FOOD_PER_CITIZEN);
+            add(d, ResourceType.FOOD, enslaved ? -0.8 : -FOOD_PER_CITIZEN);
         }
         int pop = core.population(k.id);
         add(d, ResourceType.GOLD, pop * k.laws.taxLevel * 0.12);

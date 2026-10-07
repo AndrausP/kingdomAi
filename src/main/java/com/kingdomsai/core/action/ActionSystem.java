@@ -22,8 +22,42 @@ public final class ActionSystem {
     private final List<Validators.Validator> pipeline = List.of(
             Validators.SCHEMA, Validators.PERMISSION, Validators.WORLD, Validators.RESOURCES);
 
+    /** Ordem irreversível esperando o "confirmo" do rei (60 s). Nunca vem pronta da IA: só o rei confirma. */
+    public record Pending(ActionRequest request, long expiresTick, String summary) {}
+
+    private final Map<UUID, Pending> pending = new HashMap<>();
+
     public ActionSystem(KingdomsCore core) {
         this.core = core;
+    }
+
+    /** Massacre/execução e ataque "sem piedade" pedem confirmação explícita do rei. */
+    public static boolean needsConfirmation(ActionRequest r) {
+        return r.type() == ActionType.PURGE
+                || (r.type() == ActionType.ATTACK || r.type() == ActionType.OCCUPY) && "true".equalsIgnoreCase(r.param("no_quarter"));
+    }
+
+    public Pending pending(UUID actor) {
+        Pending p = actor == null ? null : pending.get(actor);
+        if (p != null && core.tick() > p.expiresTick()) {
+            pending.remove(actor);
+            return null;
+        }
+        return p;
+    }
+
+    /** "Confirmo": executa a ordem guardada, revalidando tudo (o mundo pode ter mudado nesses segundos). */
+    public ActionResult confirm(UUID actor) {
+        Pending p = pending(actor);
+        if (p == null) return ActionResult.reject("nothing_pending", "Não há ordem esperando confirmação.");
+        pending.remove(actor);
+        return execute(p.request(), true);
+    }
+
+    public ActionResult abort(UUID actor) {
+        Pending p = pending.remove(actor);
+        if (p == null) return ActionResult.reject("nothing_pending", "Não há ordem esperando confirmação.");
+        return ActionResult.ok("Ordem desfeita: " + p.request().type() + ". Ninguém foi ferido.");
     }
 
     public ActionResult validate(ActionRequest r) {
@@ -35,6 +69,10 @@ public final class ActionSystem {
     }
 
     public ActionResult execute(ActionRequest r) {
+        return execute(r, false);
+    }
+
+    private ActionResult execute(ActionRequest r, boolean confirmed) {
         ActionResult rej = validate(r);
         if (rej != null) {
             if (r.source() != ActionRequest.Source.DIRECTOR)
@@ -43,6 +81,12 @@ public final class ActionSystem {
             return rej;
         }
         Kingdom k = core.kingdom(r.kingdomId());
+        if (needsConfirmation(r) && !confirmed) {
+            String summary = confirmationSummary(k, r);
+            pending.put(r.actorId(), new Pending(r, core.tick() + 20L * 60, summary));
+            return ActionResult.reject("needs_confirmation", summary
+                    + " Para cumprir, diga \"confirmo\" (ou /k confirmar, ou o botão Confirmar do Manager); para desistir, \"desisto\". Vale por 60 s.");
+        }
         ActionResult res;
         try {
             res = switch (r.type()) {
@@ -50,7 +94,7 @@ public final class ActionSystem {
                 case DEADLINE -> ActionResult.ok(core.construction().setDeadline(findProject(core, k, r.param("building")),
                         com.kingdomsai.core.construction.ConstructionSystem.parseDuration(r.param("deadline"))));
                 case CANCEL_BUILD -> ActionResult.ok(core.construction().cancel(findProject(core, k, r.param("building"))));
-                case RECRUIT -> recruit(k, r.intParam("amount", 1));
+                case RECRUIT -> recruit(k, r);
                 case RELEASE -> release(k, r.intParam("amount", 1), r.param("profession"));
                 case WORK -> work(k, r);
                 case PROMOTE -> promote(k, core.findNpc(k.id, r.param("npc")), Office.parse(r.param("office")));
@@ -78,6 +122,19 @@ public final class ActionSystem {
                     yield ActionResult.ok(n.name + " foi dispensado e voltou à rotina.");
                 }
                 case STOP_CHAIN -> ActionResult.ok(core.work().stop(Validators.findChain(core, k, r), "ordem do rei"));
+                case ATTACK, OCCUPY -> attack(k, r);
+                case RETREAT -> ActionResult.ok(core.warfare().retreat(core.warfare().find(k.id, r.param("campaign"))));
+                case SETTLE -> settle(k, r);
+                case PURGE -> {
+                    String msg = core.warfare().purge(k, Validators.purgeVictims(core, k, r));
+                    yield msg.startsWith("MOTIM") ? ActionResult.reject("mutiny", msg) : ActionResult.ok(msg);
+                }
+                case ENSLAVE -> {
+                    String msg = core.warfare().enslave(k, Validators.enslaveVictims(core, k, r), Validators.forcedWork(core, k, r));
+                    yield msg.startsWith("MOTIM") ? ActionResult.reject("mutiny", msg) : ActionResult.ok(msg);
+                }
+                case FREE -> ActionResult.ok(core.warfare().free(k, Validators.freeTargets(core, k, r),
+                        "true".equalsIgnoreCase(r.param("home"))));
                 default -> ActionResult.reject("not_available_in_this_phase", r.type() + " ainda não foi implementada.");
             };
         } catch (RuntimeException ex) {
@@ -212,9 +269,17 @@ public final class ActionSystem {
         return ActionResult.ok(sb.toString());
     }
 
-    private ActionResult recruit(Kingdom k, int amount) {
+    /**
+     * Convocação sem ouro: o exército custa comida. Sem número, quem decide é o general/capitão (ou o soldado mais experiente),
+     * olhando a maior ameaça; ele também escolhe quem vai (camponeses primeiro, depois os mais corajosos).
+     */
+    private ActionResult recruit(Kingdom k, ActionRequest r) {
+        Npc decider = core.warfare().commander(k, r.param("npc"));
+        boolean decided = r.param("amount") == null || r.param("amount").isBlank();
+        int amount = decided ? (decider == null ? 1 : core.warfare().recruitDecision(k)) : r.intParam("amount", 1);
         List<Npc> civ = new ArrayList<>();
-        for (Npc n : core.citizens(k.id)) if (!n.profession.isMilitary() && n.office == Office.NONE) civ.add(n);
+        for (Npc n : core.citizens(k.id))
+            if (!n.profession.isMilitary() && n.office == Office.NONE && n.isFree() && n.campaignId == null) civ.add(n);
         // Prioridade: camponeses, depois quem tem mais coragem.
         civ.sort(Comparator.comparingInt((Npc n) -> expendability(k, n) + (isLastOf(k, n) ? 100 : 0))
                 .thenComparing(n -> -n.trait(Trait.COURAGE)));
@@ -227,10 +292,12 @@ public final class ActionSystem {
             if (k.get(ResourceType.WEAPONS) >= 1) k.add(ResourceType.WEAPONS, -1);
             names.add(n.name);
         }
-        k.add(ResourceType.GOLD, -15 * names.size());
         core.bus().publish(core.tick(), EventType.ARMY_RECRUITED, GameEvent.Severity.INFO, k.id, null,
                 names.size() + " recrutado(s) em " + k.name + ": " + String.join(", ", names) + ".");
-        return ActionResult.ok("Recrutados: " + String.join(", ", names) + ".");
+        double food = core.military(k.id) * (com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD - 1);
+        return ActionResult.ok((decided && decider != null ? decider.displayName() + " decidiu convocar " + names.size() + ". " : "")
+                + "Recrutados: " + String.join(", ", names) + ". O exército não custa ouro, custa comida: ~"
+                + Text.fmt(food) + " a mais por ciclo para " + core.military(k.id) + " militares.");
     }
 
     private ActionResult release(Kingdom k, int amount, String professionName) {
@@ -257,7 +324,8 @@ public final class ActionSystem {
         Profession from = r.param("from") == null ? null : Profession.parse(r.param("from"));
         List<Npc> pool = new ArrayList<>();
         for (Npc n : core.citizens(k.id))
-            if (n.profession != to && n.office == Office.NONE && (from == null ? !n.profession.isMilitary() : n.profession == from)) pool.add(n);
+            if (n.profession != to && n.office == Office.NONE && n.freedom != Freedom.CAPTIVE && n.campaignId == null
+                    && (from == null ? !n.profession.isMilitary() : n.profession == from)) pool.add(n);
         if (pool.isEmpty())
             return ActionResult.reject("not_enough_people", "Ninguém disponível" + (from != null ? " entre " + from.display.toLowerCase() + "s" : "") + ".");
         // Quem sai primeiro: camponeses; quem fica por último: o último construtor/ferreiro do reino.
@@ -265,10 +333,13 @@ public final class ActionSystem {
         if (from == null) pool.removeIf(n -> isLastOf(k, n));
         if (pool.isEmpty()) return ActionResult.reject("not_enough_people", "Só restam pessoas em funções essenciais (último construtor/ferreiro).");
         List<String> names = new ArrayList<>();
-        for (int i = 0; i < amount && i < pool.size(); i++) {
-            setProfession(k, pool.get(i), to);
-            names.add(pool.get(i).name);
+        for (Npc n : pool) {
+            if (names.size() >= amount) break;
+            if (from == null && isLastOf(k, n)) continue; // reavalia a cada troca: nunca leva o último construtor/ferreiro
+            setProfession(k, n, to);
+            names.add(n.name);
         }
+        if (names.isEmpty()) return ActionResult.reject("not_enough_people", "Só restam pessoas em funções essenciais (último construtor/ferreiro).");
         return ActionResult.ok(String.join(", ", names) + " agora trabalha(m) como " + to.display.toLowerCase() + ".");
     }
 
@@ -363,11 +434,58 @@ public final class ActionSystem {
             core.state().territory.claim(c[0], c[1], k.id, 40, core.tick());
             done++;
         }
-        k.add(ResourceType.GOLD, -40 * done);
         core.bus().publish(core.tick(), EventType.TERRITORY_CLAIMED, GameEvent.Severity.INFO, k.id, null,
                 k.name + " reivindicou " + done + " nova(s) região(ões).");
-        return ActionResult.ok(done + " célula(s) reivindicada(s). Território: " + core.state().territory.countOwned(k.id) + " células ("
-                + String.format(Locale.ROOT, "%.2f", core.state().territory.areaKm2(k.id)) + " km²).");
+        return ActionResult.ok(done + " célula(s) reivindicada(s) (terra livre: não custa nada). Território: " + core.state().territory.countOwned(k.id)
+                + "/" + core.warfare().claimLimit(k) + " células (" + String.format(Locale.ROOT, "%.2f", core.state().territory.areaKm2(k.id)) + " km²).");
+    }
+
+    private String confirmationSummary(Kingdom k, ActionRequest r) {
+        if (r.type() == ActionType.PURGE) return "⚠ " + core.warfare().describePurge(k, Validators.purgeVictims(core, k, r));
+        Validators.Target t = Validators.attackTarget(core, k, r);
+        return "⚠ Ataque SEM PIEDADE contra " + (t.owner() == null ? "terra livre" : t.owner().name)
+                + ": se a vila cair, ninguém será poupado (em vez de virar cativo).";
+    }
+
+    /** Ataque/ocupação: o comandante escolhe quem vai e calcula a força; ataque sem guerra declarada declara na hora, com desonra. */
+    private ActionResult attack(Kingdom k, ActionRequest r) {
+        var war = core.warfare();
+        Validators.Target t = Validators.attackTarget(core, k, r);
+        Npc cmd = war.commander(k, r.param("npc"));
+        Integer amount = r.param("amount") == null || r.param("amount").isBlank() ? null : r.intParam("amount", 1);
+        List<Npc> troops = war.chooseTroops(k, t.owner(), t.pos(), amount, "true".equalsIgnoreCase(r.param("guards")));
+        if (cmd != null && cmd.isFree() && cmd.campaignId == null && cmd.office != Office.KING && !troops.contains(cmd)
+                && (cmd.office == Office.GENERAL || cmd.office == Office.CAPTAIN)) troops.add(0, cmd); // quem comanda vai junto
+        String surprise = "";
+        if (t.owner() != null && core.diplomacy().link(k.id, t.owner().id).state != Diplomacy.State.WAR) {
+            core.diplomacy().declareWar(k, t.owner());
+            k.honor = Text.clamp(k.honor - 15, 0, 100);
+            k.legitimacy = Text.clamp(k.legitimacy - 3, 0, 100);
+            surprise = " ⚠ Ataque sem declaração: a guerra contra " + t.owner().name + " foi declarada agora (desonra: os vizinhos confiarão menos).";
+        }
+        double force = 0;
+        for (Npc n : troops) force += war.power(n, k);
+        double def = war.defenseAt(t.owner(), t.pos());
+        var c = war.launch(k, com.kingdomsai.core.military.Campaign.Kind.ATTACK, cmd, troops, t.owner(), t.pos(),
+                "true".equalsIgnoreCase(r.param("no_quarter")), !surprise.isEmpty(), r.param("order"));
+        return ActionResult.ok("Tropa #" + c.number + (cmd != null ? " — " + cmd.displayName() + " escolheu: " : ": ")
+                + com.kingdomsai.core.military.MilitarySystem.names(troops) + ". Marcha para " + (t.owner() == null ? "terra livre" : t.owner().name)
+                + " (" + t.pos().x() + ", " + t.pos().z() + "), chega em ~" + (c.arriveTick - core.tick()) / 20 + " s. "
+                + String.format(Locale.ROOT, "Força %.1f × defesa estimada %.1f.", force, def)
+                + (force < def ? " ⚠ O comandante avisa: estamos em desvantagem." : "")
+                + " Em campanha cada soldado come " + Text.fmt(com.kingdomsai.core.military.MilitarySystem.SOLDIER_FOOD
+                + com.kingdomsai.core.military.MilitarySystem.CAMPAIGN_EXTRA_FOOD) + " por ciclo." + surprise);
+    }
+
+    /** Colonos: gente que vai morar lá e toma a terra — além do limite de reivindicação. */
+    private ActionResult settle(Kingdom k, ActionRequest r) {
+        Validators.Target t = Validators.attackTarget(core, k, r);
+        List<Npc> settlers = Validators.settlers(core, k, r.intParam("amount", 3));
+        var c = core.warfare().launch(k, com.kingdomsai.core.military.Campaign.Kind.SETTLE, null, settlers, t.owner(), t.pos(), false, false,
+                r.param("order"));
+        return ActionResult.ok("Colonos #" + c.number + ": " + com.kingdomsai.core.military.MilitarySystem.names(settlers) + " partem para "
+                + (t.owner() == null ? "terra livre" : "terra de " + t.owner().name) + " (" + t.pos().x() + ", " + t.pos().z() + "), chegam em ~"
+                + (c.arriveTick - core.tick()) / 20 + " s." + (t.owner() != null ? " ⚠ Se houver guardas de " + t.owner().name + " por lá, serão expulsos: mande tropas." : ""));
     }
 
     private ActionResult negotiate(Kingdom k, ActionRequest r) {
