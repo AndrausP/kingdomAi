@@ -204,6 +204,11 @@ public final class CoreSelfTest {
         passed += va[0];
         failed += va[1];
 
+        // 16. Claude Code como IA (processo falso e script)
+        int[] cc = ClaudeCodeSelfTest.run();
+        passed += cc[0];
+        failed += cc[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

@@ -51,7 +51,7 @@ public class ManagerScreen extends Screen {
             "cobblestone", "brick", "sandstone", "deepslate", "mud", "quartz"};
     private static final String[] MAT_NAMES = {"carvalho", "abeto", "bétula", "carvalho escuro", "acácia", "selva", "cerejeira", "mangue",
             "pedra", "pedregulho", "tijolo", "arenito", "ardósia", "barro", "quartzo"};
-    private static String savedOrder = "", savedEndpoint, savedModel;
+    private static String savedOrder = "", savedEndpoint, savedModel, configProvider;
     private static int bpScroll;
 
     private JsonObject data;
@@ -300,45 +300,74 @@ public class ManagerScreen extends Screen {
                 b -> send("config set ai.enabled " + !enabled), enabled ? GOOD : BAD);
         toggle.active = can;
         addRenderableWidget(toggle);
-        String[] providers = {"ollama", "openai", "mock"};
+        String[] providers = {"ollama", "openai", "claude_code", "mock"};
         int pi = Math.max(0, Arrays.asList(providers).indexOf(provider));
-        FlatButton prov = new FlatButton(x + 74, y, 90, 14, Component.literal(provider + " ▸"),
-                b -> send("config set ai.provider " + providers[(pi + 1) % providers.length]), BLUE);
+        boolean claude = provider.equals("claude_code");
+        boolean canClaude = data.has("canClaude") && data.get("canClaude").getAsBoolean();
+        String nextProvider = providers[(pi + 1) % providers.length];
+        if (nextProvider.equals("claude_code") && !canClaude) nextProvider = providers[(pi + 2) % providers.length];
+        String np = nextProvider;
+        FlatButton prov = new FlatButton(x + 74, y, 90, 14, Component.literal((claude ? "Claude Code" : provider) + " ▸"),
+                b -> send("config set ai.provider " + np), claude ? ACCENT : BLUE);
         prov.active = can;
-        prov.setTooltip(Tooltip.create(Component.literal("ollama = local · openai = qualquer servidor compatível (LM Studio, vLLM, OpenAI) · mock = só regras")));
+        prov.setTooltip(Tooltip.create(Component.literal("ollama = local · openai = qualquer servidor compatível (LM Studio, vLLM, OpenAI) · "
+                + "claude_code = usa o Claude Code instalado no PC (login da sua conta, sem MCP) · mock = só regras")));
         addRenderableWidget(prov);
+        // Os campos mudam com o provider: Ollama/OpenAI usam endereço + modelo; o Claude Code usa o comando + apelido do modelo.
+        if (!provider.equals(configProvider)) {
+            savedEndpoint = null;
+            savedModel = null;
+            configProvider = provider;
+        }
+        String endpointKey = claude ? "ai.claude_command" : "ai.endpoint";
+        String modelKey = claude ? "ai.claude_model" : "ai.model";
+        boolean canField = can && (!claude || canClaude);
         y += 20;
-        endpointBox = new EditBox(font, x, y, w, 14, Component.literal("Endpoint"));
-        endpointBox.setMaxLength(200);
-        endpointBox.setValue(savedEndpoint != null ? savedEndpoint : str(cfg, "ai.endpoint"));
+        endpointBox = new EditBox(font, x, y, w, 14, Component.literal(claude ? "Comando" : "Endpoint"));
+        endpointBox.setMaxLength(260);
+        endpointBox.setValue(savedEndpoint != null ? savedEndpoint : str(cfg, endpointKey));
         endpointBox.setResponder(v -> savedEndpoint = v);
-        endpointBox.setEditable(can);
+        endpointBox.setEditable(canField);
+        if (claude) endpointBox.setTooltip(Tooltip.create(Component.literal(
+                "\"claude\" se ele abre no terminal. Senão o caminho completo: C:\\Users\\voce\\.local\\bin\\claude.exe (instalador) "
+                        + "ou C:\\Users\\voce\\AppData\\Roaming\\npm\\claude.cmd (npm).")));
         addRenderableWidget(endpointBox);
         FlatButton se = new FlatButton(x + w + 4, y, 60, 14, Component.literal("Salvar"), b -> {
-            send("config set ai.endpoint " + endpointBox.getValue().trim());
+            send("config set " + endpointKey + " " + endpointBox.getValue().trim());
             savedEndpoint = null;
         }, GOOD);
-        se.active = can;
+        se.active = canField;
         addRenderableWidget(se);
         y += 20;
         modelBox = new EditBox(font, x, y, w, 14, Component.literal("Modelo"));
         modelBox.setMaxLength(120);
-        modelBox.setValue(savedModel != null ? savedModel : str(cfg, "ai.model"));
+        modelBox.setValue(savedModel != null ? savedModel : str(cfg, modelKey));
         modelBox.setResponder(v -> savedModel = v);
-        modelBox.setEditable(can);
+        modelBox.setEditable(canField);
         addRenderableWidget(modelBox);
         FlatButton sm = new FlatButton(x + w + 4, y, 60, 14, Component.literal("Salvar"), b -> {
-            send("config set ai.model " + modelBox.getValue().trim());
+            send("config set " + modelKey + " " + modelBox.getValue().trim());
             savedModel = null;
         }, GOOD);
-        sm.active = can;
+        sm.active = canField;
         addRenderableWidget(sm);
         y += 18;
-        addRenderableWidget(new FlatButton(x, y, 110, 14, Component.literal("Listar modelos"), b -> send("config models"), BLUE));
+        if (claude) {
+            FlatButton login = new FlatButton(x, y, 110, 14, Component.literal("Login do Claude"), b -> send("config login"), ACCENT);
+            boolean local = data.has("localHost") && data.get("localHost").getAsBoolean();
+            login.active = canField && local;
+            login.setTooltip(Tooltip.create(Component.literal(local
+                    ? "Abre uma janela do terminal FORA do jogo com \"claude auth login\" (o navegador abre para entrar na sua conta). Só precisa uma vez."
+                    : "Servidor dedicado: rode \"claude auth login\" no terminal do servidor.")));
+            addRenderableWidget(login);
+        } else addRenderableWidget(new FlatButton(x, y, 110, 14, Component.literal("Listar modelos"), b -> send("config models"), BLUE));
         addRenderableWidget(new FlatButton(x + 114, y, 90, 14, Component.literal("Testar IA"), b -> send("config test"), WARN));
         y += 18;
-        // modelos disponíveis (clique escolhe)
-        JsonArray models = arr(data, "models");
+        // modelos disponíveis (clique escolhe). Claude Code: os apelidos fixos, sem consultar nada.
+        JsonArray models = new JsonArray();
+        if (claude) for (String m : new String[]{"haiku", "sonnet", "opus", "fable"}) models.add(m);
+        else models = arr(data, "models");
+        String currentModel = str(cfg, modelKey);
         int mx = x;
         for (JsonElement e : models) {
             String m = e.getAsString();
@@ -350,9 +379,15 @@ public class ManagerScreen extends Screen {
             if (y > cy0 + 120) break;
             FlatButton mb = new FlatButton(mx, y, mw, 14, Component.literal(m), b -> {
                 savedModel = null;
-                send("config set ai.model " + m);
-            }, m.equals(str(cfg, "ai.model")) ? GOOD : DIM).selected(m.equals(str(cfg, "ai.model")));
-            mb.active = can;
+                send("config set " + modelKey + " " + m);
+            }, m.equals(currentModel) ? GOOD : DIM).selected(m.equals(currentModel));
+            mb.active = canField;
+            if (claude) mb.setTooltip(Tooltip.create(Component.literal(switch (m) {
+                case "haiku" -> "Rápido e econômico (~5 s): o melhor para conversa com súditos.";
+                case "sonnet" -> "Equilibrado: ordens complexas e cadeias de trabalho (~10–20 s).";
+                case "opus" -> "O mais capaz e o mais lento: conselho estratégico.";
+                default -> "Fable: modelo de alto nível; gasta mais da sua cota.";
+            })));
             addRenderableWidget(mb);
             mx += mw + 3;
         }
@@ -996,13 +1031,17 @@ public class ManagerScreen extends Screen {
         boolean can = data.has("canConfigure") && data.get("canConfigure").getAsBoolean();
         title(g, "Configuração da IA e do jogo" + (can ? "" : " — só o dono do mundo pode alterar"));
         int x = cx0 + 4, y = cy0 + 21;
+        boolean claude = "claude_code".equals(str(cfg, "ai.provider"));
         g.drawString(font, "IA / Provider", x, y, DIM);
-        g.drawString(font, "Endpoint", x, y + 23, DIM);
+        g.drawString(font, claude ? "Comando" : "Endpoint", x, y + 23, DIM);
         g.drawString(font, "Modelo", x, y + 43, DIM);
         g.drawString(font, "Ações", x, y + 61, DIM);
         String test = str(data, "lastTest");
         if (!test.isBlank())
             g.drawString(font, font.plainSubstrByWidth(test, cx1 - x - 4), x, cy0 + 112, test.startsWith("✓") ? GOOD : test.startsWith("✗") ? BAD : WARN);
+        else if (claude)
+            g.drawString(font, font.plainSubstrByWidth("Sem MCP: o jogo abre o claude em segundo plano, sem ferramentas. 1ª vez: Login do Claude → Testar IA.",
+                    cx1 - x - 4), x, cy0 + 112, MUTED);
         int ry = configRows - 34;
         label(g, cx0 + 4, ry, "Temperatura", str(cfg, "ai.temperature"));
         label(g, cx0 + 154, ry, "Timeout ms", str(cfg, "ai.timeout_ms"));

@@ -6,6 +6,7 @@ import com.kingdomsai.core.common.Pos;
 import com.kingdomsai.core.common.Text;
 import com.kingdomsai.core.construction.Blueprint;
 import com.kingdomsai.core.construction.ParametricBlueprints;
+import com.kingdomsai.core.llm.ClaudeCodeProvider;
 import com.kingdomsai.core.npc.Npc;
 import com.kingdomsai.minecraft.entity.KingdomNpcEntity;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
@@ -57,7 +58,7 @@ public final class KingdomsExtension implements CommandService.Extension {
 
     @Override
     public List<String> help() {
-        return List.of("config · config set <chave> <valor> · config models · config test  (ex.: /k config set ai.model qwen2.5:14b)",
+        return List.of("config · config set <chave> <valor> · config models · config test · config login  (ex.: /k config set ai.provider claude_code)",
                 "blueprint pos1 · blueprint pos2 · blueprint save <nome> — salva uma construção sua como planta · blueprint import (pasta kingdomsai/blueprints, .nbt)",
                 "bandeira — recebe a Bandeira do Reino (marca spawn, praça, mina, bosque; Shift + clique troca)");
     }
@@ -131,6 +132,12 @@ public final class KingdomsExtension implements CommandService.Extension {
                 }
                 String key = a[2].toLowerCase(Locale.ROOT);
                 String value = String.join(" ", Arrays.copyOfRange(a, 3, a.length));
+                // O Claude Code roda um programa no PC do servidor com a conta do dono: só o dono/admin (nível 4) liga.
+                boolean claudeKey = key.equals("ai.claude_command") || key.equals("ai.provider") && value.trim().equalsIgnoreCase("claude_code");
+                if (claudeKey && !p.server.isSingleplayerOwner(p.getGameProfile()) && !p.hasPermissions(4)) {
+                    out.add("✗ Só o dono do mundo (ou admin nível 4) liga o Claude Code: ele roda no PC do servidor com a conta dele.");
+                    return;
+                }
                 String err = KingdomsConfig.set(key, value);
                 if (err != null) {
                     out.add("✗ " + err);
@@ -141,7 +148,8 @@ public final class KingdomsExtension implements CommandService.Extension {
                 if (key.startsWith("ai.")) out.add(rt.core().llm().status());
             }
             case "models", "modelos" -> {
-                out.add("Consultando modelos em " + KingdomsConfig.AI_ENDPOINT.get() + "...");
+                out.add(rt.core().llm().config().isClaudeCode() ? "Modelos do Claude Code (apelidos sempre na versão mais nova):"
+                        : "Consultando modelos em " + KingdomsConfig.AI_ENDPOINT.get() + "...");
                 UUID id = p.getUUID();
                 rt.core().llm().listModels().whenComplete((list, err) -> rt.core().mainThread().execute(() -> {
                     List<String> lines = new ArrayList<>();
@@ -149,9 +157,11 @@ public final class KingdomsExtension implements CommandService.Extension {
                             + ". O Ollama está rodando? (ollama serve)");
                     else {
                         lastModels = List.copyOf(list);
+                        boolean cc = rt.core().llm().config().isClaudeCode();
+                        String current = cc ? KingdomsConfig.AI_CLAUDE_MODEL.get() : KingdomsConfig.AI_MODEL.get();
                         lines.add("# Modelos disponíveis (" + list.size() + ")");
-                        for (String m : list) lines.add((m.equals(KingdomsConfig.AI_MODEL.get()) ? "✓ " : "  ") + m);
-                        lines.add("Escolher: /k config set ai.model <nome>");
+                        for (String m : list) lines.add((m.equals(current) ? "✓ " : "  ") + m);
+                        lines.add("Escolher: /k config set " + (cc ? "ai.claude_model" : "ai.model") + " <nome>");
                     }
                     rt.notify(id, lines);
                 }));
@@ -164,6 +174,15 @@ public final class KingdomsExtension implements CommandService.Extension {
                     rt.notify(id, List.of(lastTest));
                 }));
             }
+            case "login", "claude" -> {
+                // Abre um terminal FORA do jogo com "claude auth login". Só no PC de quem joga (single player / LAN do dono).
+                if (!p.server.isSingleplayerOwner(p.getGameProfile())) {
+                    out.add("⚠ O Claude Code roda no PC do servidor. Lá, abra um terminal e rode: claude auth login");
+                    return;
+                }
+                out.add(ClaudeCodeProvider.openLoginTerminal(KingdomsConfig.llm(),
+                        java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "kingdomsai-claude")));
+            }
             case "reload" -> {
                 apply();
                 out.add("✓ Configuração recarregada. " + rt.core().llm().status());
@@ -171,7 +190,7 @@ public final class KingdomsExtension implements CommandService.Extension {
             default -> {
                 out.add("# Configuração (kingdomsai-common.toml)");
                 for (String k : KingdomsConfig.KEYS.keySet()) out.add(k + " = " + KingdomsConfig.display(k));
-                out.add("Mudar: /k config set <chave> <valor> · /k config models · /k config test");
+                out.add("Mudar: /k config set <chave> <valor> · /k config models · /k config test · /k config login (Claude Code)");
             }
         }
     }

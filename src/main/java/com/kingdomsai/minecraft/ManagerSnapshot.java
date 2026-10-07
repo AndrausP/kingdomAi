@@ -29,6 +29,9 @@ public final class ManagerSnapshot {
         for (String key : KingdomsConfig.KEYS.keySet()) cfg.addProperty(key, KingdomsConfig.display(key));
         root.add("config", cfg);
         root.addProperty("canConfigure", player.server.isSingleplayerOwner(player.getGameProfile()) || player.hasPermissions(2));
+        // Claude Code roda no PC do servidor com a conta do dono: só ele (ou admin nível 4) liga; o terminal de login só abre no PC de quem joga.
+        root.addProperty("canClaude", player.server.isSingleplayerOwner(player.getGameProfile()) || player.hasPermissions(4));
+        root.addProperty("localHost", player.server.isSingleplayerOwner(player.getGameProfile()));
         JsonArray models = new JsonArray();
         if (rt.extension() != null) rt.extension().lastModels().forEach(models::add);
         root.add("models", models);
