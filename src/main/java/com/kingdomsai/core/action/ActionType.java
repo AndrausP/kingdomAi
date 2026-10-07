@@ -1,0 +1,74 @@
+package com.kingdomsai.core.action;
+
+import com.kingdomsai.core.npc.Permission;
+
+import java.util.List;
+
+/**
+ * Ações primitivas. A LLM (ou o jogador, ou a IA de um reino) combina estas ações;
+ * ninguém executa "qualquer coisa imaginável".
+ *
+ * implemented = false → o Schema Validator rejeita com "not_available_in_this_phase".
+ */
+public enum ActionType {
+    // Implementadas nesta fase
+    BUILD(Permission.BUILD, true, List.of("blueprint"),
+            "blueprint (id ou 'custom'), amount?, for?, deadline? (ex.: 5m, 1d, amanha); se custom: kind, width, depth, floors, roof, wall, roof_material, chimney"),
+    DEADLINE(Permission.BUILD, true, List.of("deadline"), "building? (número da obra ou nome), deadline (5m, 1d, amanha)"),
+    CANCEL_BUILD(Permission.BUILD, true, List.of("building"), "building (número da obra ou nome)"),
+    RECRUIT(Permission.RECRUIT, true, List.of(), "amount?"),
+    RELEASE(Permission.RECRUIT, true, List.of(), "amount?, profession?"),
+    WORK(Permission.ASSIGN_WORK, true, List.of("profession"), "npc? | amount?, profession, from?"),
+    PROMOTE(Permission.PROMOTE, true, List.of("npc", "office"), "npc, office"),
+    DEMOTE(Permission.PROMOTE, true, List.of("npc"), "npc"),
+    TAX(Permission.TAX, true, List.of("level"), "level (0-4 | up | down)"),
+    LAW(Permission.LAW, true, List.of("law", "value"), "law (conscription|migration), value (on|off)"),
+    CLAIM(Permission.CLAIM, true, List.of(), "amount?"),
+    NEGOTIATE(Permission.DIPLOMACY, true, List.of("target"), "target, give?, give_amount?, want?, want_amount?, treaty?"),
+    GIVE(Permission.DIPLOMACY, true, List.of("target", "resource", "amount"), "target, resource, amount"),
+    DECLARE_WAR(Permission.DECLARE_WAR, true, List.of("target"), "target"),
+    MAKE_PEACE(Permission.DIPLOMACY, true, List.of("target"), "target"),
+    PATROL(Permission.ASSIGN_WORK, true, List.of("npc"), "npc"),
+    GUARD(Permission.ASSIGN_WORK, true, List.of("npc"), "npc"),
+    TALK(Permission.TALK, true, List.of(), "npc?, text?"),
+
+    // Previstas na arquitetura, chegam em fases futuras
+    MOVE(Permission.WORK, false, List.of(), ""),
+    FOLLOW(Permission.WORK, false, List.of(), ""),
+    TRADE(Permission.TRADE, false, List.of(), ""),
+    REPAIR(Permission.BUILD, false, List.of(), ""),
+    TRAVEL(Permission.WORK, false, List.of(), ""),
+    ATTACK(Permission.DECLARE_WAR, false, List.of(), ""),
+    DEFEND(Permission.RECRUIT, false, List.of(), ""),
+    RETREAT(Permission.RECRUIT, false, List.of(), ""),
+    SCOUT(Permission.RECRUIT, false, List.of(), ""),
+    TRAIN(Permission.RECRUIT, false, List.of(), ""),
+    ARREST(Permission.JUDGE, false, List.of(), ""),
+    JUDGE(Permission.JUDGE, false, List.of(), ""),
+    EXILE(Permission.JUDGE, false, List.of(), ""),
+    OCCUPY(Permission.DECLARE_WAR, false, List.of(), ""),
+    CONVERT(Permission.PREACH, false, List.of(), ""),
+    PREACH(Permission.PREACH, false, List.of(), ""),
+    FOUND_SETTLEMENT(Permission.CLAIM, false, List.of(), "");
+
+    public final Permission permission;
+    public final boolean implemented;
+    public final List<String> requiredParams;
+    public final String paramHelp;
+
+    ActionType(Permission permission, boolean implemented, List<String> requiredParams, String paramHelp) {
+        this.permission = permission;
+        this.implemented = implemented;
+        this.requiredParams = requiredParams;
+        this.paramHelp = paramHelp;
+    }
+
+    public static ActionType parse(String s) {
+        if (s == null) return null;
+        try {
+            return valueOf(s.trim().toUpperCase().replace(' ', '_').replace('-', '_'));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+}

@@ -1,0 +1,165 @@
+package com.kingdomsai.core.ai;
+
+import com.kingdomsai.core.KingdomsCore;
+import com.kingdomsai.core.action.ActionRequest;
+import com.kingdomsai.core.action.ActionResult;
+import com.kingdomsai.core.action.ActionType;
+import com.kingdomsai.core.construction.Building;
+import com.kingdomsai.core.diplomacy.Diplomacy;
+import com.kingdomsai.core.event.EventType;
+import com.kingdomsai.core.event.GameEvent;
+import com.kingdomsai.core.kingdom.Kingdom;
+import com.kingdomsai.core.kingdom.ResourceType;
+import com.kingdomsai.core.npc.Profession;
+
+import java.util.*;
+
+/**
+ * AI Director de cada reino de IA: Utility AI (sem LLM). Observa o estado, calcula prioridades
+ * e emite ações pelo MESMO pipeline de validação que o jogador usa.
+ */
+public final class KingdomDirector {
+    private final KingdomsCore core;
+    /** Última análise por reino — usada pelo /kingdom debug ai. */
+    private final Map<UUID, String> lastReasoning = new HashMap<>();
+
+    public record Priority(String goal, double score, String reason) {}
+
+    public KingdomDirector(KingdomsCore core) {
+        this.core = core;
+    }
+
+    public String lastReasoning(UUID k) {
+        return lastReasoning.getOrDefault(k, "(ainda não avaliado)");
+    }
+
+    public void tick() {
+        for (Kingdom k : List.copyOf(core.state().kingdoms.values())) {
+            if (k.isPlayerKingdom()) continue;
+            run(k);
+        }
+    }
+
+    public List<Priority> evaluate(Kingdom k) {
+        List<Priority> ps = new ArrayList<>();
+        int pop = core.population(k.id);
+        int cap = core.housingCapacity(k.id);
+        double foodTicks = core.economy().foodTicksLeft(k);
+        double foodScore = foodTicks == Double.POSITIVE_INFINITY ? (k.get(ResourceType.FOOD) < pop * 10 ? 0.3 : 0.05)
+                : Math.min(1.0, 40 / Math.max(1, foodTicks));
+        ps.add(new Priority("INCREASE_FOOD", foodScore + (k.famine ? 1 : 0),
+                foodTicks == Double.POSITIVE_INFINITY ? "comida estável" : "comida acaba em " + (int) foodTicks + " ticks"));
+        ps.add(new Priority("BUILD_HOUSING", pop >= cap - 1 ? 0.7 : 0.1, "moradia " + pop + "/" + cap));
+        double threat = 0;
+        String threatBy = "ninguém";
+        for (Kingdom o : core.state().kingdoms.values()) {
+            if (o == k) continue;
+            Diplomacy.Attitude att = core.diplomacy().attitude(k.id, o.id);
+            Diplomacy.Link l = core.diplomacy().link(k.id, o.id);
+            double t = (att.hostility / 100.0) * (core.military(o.id) + 1.0) / (core.military(k.id) + 1.0);
+            if (l.state == Diplomacy.State.WAR) t += 1;
+            if (t > threat) {
+                threat = t;
+                threatBy = o.name;
+            }
+        }
+        int desiredMil = (int) Math.ceil(pop * (0.08 + k.personality.militarism / 500.0) * (1 + Math.min(threat, 2)));
+        ps.add(new Priority("FORTIFY", core.military(k.id) < desiredMil ? 0.3 + threat * 0.4 + k.personality.militarism / 200.0 : 0,
+                "ameaça " + String.format(Locale.ROOT, "%.2f", threat) + " (" + threatBy + "), militares " + core.military(k.id) + "/" + desiredMil));
+        ps.add(new Priority("EXPAND", k.personality.expansionism / 140.0 * (k.get(ResourceType.GOLD) > 120 ? 1 : 0.2),
+                "expansionismo " + k.personality.expansionism));
+        boolean needBuilder = core.count(k.id, Profession.BUILDER) == 0;
+        boolean needWood = k.get(ResourceType.WOOD) < 60 && core.count(k.id, Profession.LUMBERJACK) < 2;
+        boolean needStone = k.get(ResourceType.STONE) < 40 && core.count(k.id, Profession.MINER) < 2;
+        ps.add(new Priority("BALANCE_WORKFORCE", needBuilder || needWood || needStone ? 0.6 : 0.05,
+                needBuilder ? "sem construtores" : needWood ? "pouca madeira" : needStone ? "pouca pedra" : "ok"));
+        ps.sort(Comparator.comparingDouble(Priority::score).reversed());
+        return ps;
+    }
+
+    private void run(Kingdom k) {
+        List<Priority> ps = evaluate(k);
+        StringBuilder why = new StringBuilder();
+        for (Priority p : ps) why.append(p.goal()).append('=').append(String.format(Locale.ROOT, "%.2f", p.score())).append(" (").append(p.reason()).append(") ");
+        lastReasoning.put(k.id, why.toString());
+        int actionsTaken = 0;
+        for (Priority p : ps) {
+            if (actionsTaken >= 2 || p.score() < 0.25) break;
+            ActionResult r = act(k, p.goal());
+            if (r != null && r.ok()) {
+                actionsTaken++;
+                core.bus().publish(core.tick(), EventType.AI_DECISION, GameEvent.Severity.INFO, k.id, k.rulerNpc,
+                        k.name + ": " + p.goal() + " — " + r.message(), Map.of("goal", p.goal(), "reason", p.reason()));
+            }
+        }
+    }
+
+    private ActionResult act(Kingdom k, String goal) {
+        switch (goal) {
+            case "INCREASE_FOOD" -> {
+                int farms = core.completedOf(k.id, "farm") + (int) core.construction().projects(k.id).stream().filter(b -> b.blueprintId.equals("farm")).count();
+                if (farms < Math.max(1, core.count(k.id, Profession.FARMER) / 3)) {
+                    ActionResult r = exec(k, ActionType.BUILD, "blueprint", "farm");
+                    if (r.ok()) return r;
+                }
+                String from = core.count(k.id, Profession.PEASANT) > 0 ? "PEASANT" : core.count(k.id, Profession.MERCHANT) > 1 ? "MERCHANT" : "LUMBERJACK";
+                return exec(k, ActionType.WORK, "profession", "FARMER", "amount", "1", "from", from);
+            }
+            case "BUILD_HOUSING" -> {
+                long pending = core.construction().projects(k.id).stream().filter(b -> b.blueprint().housing() > 0).count();
+                if (pending >= 2) return null;
+                return exec(k, ActionType.BUILD, "blueprint", k.get(ResourceType.WOOD) > 90 ? "house_medium" : "house_small");
+            }
+            case "FORTIFY" -> {
+                if (core.completedOf(k.id, "barracks") == 0 && core.military(k.id) >= 4 && core.construction().projects(k.id).isEmpty()) {
+                    ActionResult r = exec(k, ActionType.BUILD, "blueprint", "barracks");
+                    if (r.ok()) return r;
+                }
+                ActionResult r = exec(k, ActionType.RECRUIT, "amount", "1");
+                if (r.ok()) spiesReport(k);
+                return r;
+            }
+            case "EXPAND" -> {
+                return exec(k, ActionType.CLAIM, "amount", "1");
+            }
+            case "BALANCE_WORKFORCE" -> {
+                String to = core.count(k.id, Profession.BUILDER) == 0 ? "BUILDER"
+                        : k.get(ResourceType.WOOD) < 60 ? "LUMBERJACK" : "MINER";
+                String from = core.count(k.id, Profession.PEASANT) > 0 ? "PEASANT" : "FARMER";
+                if (from.equals("FARMER") && core.count(k.id, Profession.FARMER) <= 2) return null;
+                return exec(k, ActionType.WORK, "profession", to, "amount", "1", "from", from);
+            }
+            default -> {
+                return null;
+            }
+        }
+    }
+
+    private ActionResult exec(Kingdom k, ActionType type, String... kv) {
+        return core.actions().execute(ActionRequest.of(k.id, null, ActionRequest.ActorKind.DIRECTOR, type,
+                ActionRequest.Source.DIRECTOR, kv));
+    }
+
+    /** Reinos do jogador que estão de olho neste reino recebem o relatório dos espiões. */
+    private void spiesReport(Kingdom k) {
+        for (Kingdom p : core.state().kingdoms.values()) {
+            if (!p.isPlayerKingdom()) continue;
+            Diplomacy.Link l = core.diplomacy().link(k.id, p.id);
+            Diplomacy.Attitude att = core.diplomacy().attitude(k.id, p.id);
+            if (l.state != Diplomacy.State.PEACE || att.hostility > 45)
+                core.bus().publish(core.tick(), EventType.MILITARY_BUILDUP, GameEvent.Severity.WARN, p.id, null,
+                        "Espiões relatam movimentação militar em " + k.name + " (" + core.military(k.id) + " militares).",
+                        Map.of("other", k.id.toString()));
+        }
+    }
+
+    /** Usado na fundação dos reinos de IA: já começam com algumas obras. */
+    public void bootstrap(Kingdom k) {
+        exec(k, ActionType.BUILD, "blueprint", "house_small");
+        exec(k, ActionType.BUILD, "blueprint", "farm");
+    }
+
+    public List<Building> projects(Kingdom k) {
+        return core.construction().projects(k.id);
+    }
+}

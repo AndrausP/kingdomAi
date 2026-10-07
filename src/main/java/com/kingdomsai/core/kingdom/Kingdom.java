@@ -1,0 +1,74 @@
+package com.kingdomsai.core.kingdom;
+
+import com.kingdomsai.core.common.Pos;
+
+import java.util.*;
+
+/**
+ * Uma entidade política (Polity). O jogador é só um dos agentes do mundo:
+ * reinos de IA usam exatamente a mesma classe, os mesmos sistemas e os mesmos validadores.
+ */
+public final class Kingdom {
+    public enum PolityType { VILLAGE, CITY_STATE, KINGDOM, EMPIRE, TRIBE, THEOCRACY, REPUBLIC }
+
+    public UUID id;
+    public String name;
+    public PolityType polity = PolityType.VILLAGE;
+    /** UUID do jogador que é rei; null para reinos de IA. */
+    public UUID rulerPlayer;
+    /** Nome exibido do governante (jogador ou NPC). */
+    public String rulerName;
+    public UUID rulerNpc;
+    public Pos center;
+    public long foundedTick;
+    public int color;
+
+    public Map<ResourceType, Double> stock = new EnumMap<>(ResourceType.class);
+    /** Variação do último tick econômico, para o HUD. */
+    public Map<ResourceType, Double> lastDelta = new EnumMap<>(ResourceType.class);
+
+    public double stability = 80;
+    public double morale = 75;
+    public double legitimacy = 70;
+
+    public KingdomPersonality personality = KingdomPersonality.balanced();
+    public Laws laws = new Laws();
+
+    /** Reputação perante o mundo. */
+    public double honor = 60;
+    public double reliability = 60;
+
+    public boolean famine;
+    public boolean shortageWarned;
+    public boolean housingWarned;
+
+    public Kingdom() {}
+
+    public boolean isPlayerKingdom() {
+        return rulerPlayer != null;
+    }
+
+    public double get(ResourceType r) {
+        return stock.getOrDefault(r, 0.0);
+    }
+
+    public void add(ResourceType r, double amount) {
+        stock.put(r, Math.max(0, get(r) + amount));
+    }
+
+    public boolean has(Map<ResourceType, Integer> cost) {
+        for (var e : cost.entrySet()) if (get(e.getKey()) + 1e-6 < e.getValue()) return false;
+        return true;
+    }
+
+    public void pay(Map<ResourceType, Integer> cost) {
+        for (var e : cost.entrySet()) add(e.getKey(), -e.getValue());
+    }
+
+    public static final class Laws {
+        /** 0 = isento, 1 = baixo, 2 = normal, 3 = alto, 4 = extorsivo */
+        public int taxLevel = 2;
+        public boolean conscription = false;
+        public boolean openMigration = true;
+    }
+}
