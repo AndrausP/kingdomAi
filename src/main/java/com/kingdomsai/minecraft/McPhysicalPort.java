@@ -130,6 +130,20 @@ public final class McPhysicalPort implements PhysicalPort {
     }
 
     @Override
+    public List<Sighting> threatsNear(Pos p, int radius) {
+        BlockPos c = bp(p);
+        if (!level.isLoaded(c)) return List.of();
+        List<Sighting> out = new ArrayList<>();
+        net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(p.x() - radius, p.y() - 6, p.z() - radius, p.x() + radius + 1, p.y() + 6, p.z() + radius + 1);
+        for (net.minecraft.world.entity.monster.Monster m : level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, box)) {
+            if (!m.isAlive()) continue;
+            out.add(new Sighting(BuiltInRegistries.ENTITY_TYPE.getKey(m.getType()).toString(), new Pos(m.getBlockX(), m.getBlockY(), m.getBlockZ())));
+            if (out.size() >= 6) break;
+        }
+        return out;
+    }
+
+    @Override
     public int growth(Pos p) {
         BlockPos pos = bp(p);
         if (!level.isLoaded(pos)) return -1;

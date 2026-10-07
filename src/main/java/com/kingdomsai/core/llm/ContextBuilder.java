@@ -113,6 +113,13 @@ public final class ContextBuilder {
                 .append((int) npc.hunger).append("/100, energia ").append((int) npc.energy).append("/100.\n");
         if (!npc.bag.isEmpty()) user.append("Mochila: ").append(com.kingdomsai.core.skill.SkillSystem.summary(npc.bag)).append(".\n");
         user.append("Kit: ").append(com.kingdomsai.core.skill.Kit.describe(npc)).append(".\n");
+        user.append("Humor: ").append(com.kingdomsai.core.life.LifeSystem.moodWord(npc)).append(" (").append((int) npc.mood).append("/100). Companhia ")
+                .append((int) npc.social).append(", saúde ").append((int) npc.health).append(npc.fear > 20 ? ", com medo" : "").append(".\n");
+        if (npc.intention != null && npc.intention.active(core.tick())) user.append("Ia fazer: ").append(sanitize(npc.intention.describe())).append(".\n");
+        if (!npc.goal.isBlank()) user.append("Objetivo pessoal: ").append(sanitize(npc.goal)).append(".\n");
+        if (npc.partnerId != null && core.npc(npc.partnerId) != null) user.append("Par: ").append(core.npc(npc.partnerId).name).append(".\n");
+        if (!npc.recentTalk.isEmpty())
+            user.append("Conversas recentes: ").append(sanitize(String.join(" | ", npc.recentTalk.subList(Math.max(0, npc.recentTalk.size() - 3), npc.recentTalk.size())))).append(".\n");
         if (playerKingdom != null) user.append(lookLine(playerKingdom.rulerPlayer));
         if (!npc.carrying.isEmpty()) user.append("Na mão: ").append(com.kingdomsai.core.work.ChainValidator.summary(npc.carrying)).append(".\n");
         user.append(com.kingdomsai.core.work.ChainValidator.canRead(npc) ? "Sabe ler" : "Não sabe ler")

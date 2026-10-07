@@ -132,7 +132,14 @@ public final class KingdomDirector {
                     ActionResult r = exec(k, ActionType.BUILD, "blueprint", "farm");
                     if (r.ok()) return r;
                 }
-                String from = core.count(k.id, Profession.PEASANT) > 0 ? "PEASANT" : core.count(k.id, Profession.MERCHANT) > 1 ? "MERCHANT" : "LUMBERJACK";
+                // nunca tira o único lenhador: sem madeira não há fazenda, casa nem nada
+                String from = core.count(k.id, Profession.PEASANT) > 0 ? "PEASANT" : core.count(k.id, Profession.MERCHANT) > 1 ? "MERCHANT"
+                        : core.count(k.id, Profession.LUMBERJACK) > 1 ? "LUMBERJACK" : null;
+                if (from == null) {
+                    long building = core.construction().projects(k.id).stream().filter(b -> b.blueprintId.equals("farm")).count();
+                    return building > 0 ? ActionResult.ok("Fazenda já em obras: quando ficar pronta, a lavoura rende 60% a mais (não tiro o único lenhador).")
+                            : null;
+                }
                 return exec(k, ActionType.WORK, "profession", "FARMER", "amount", "1", "from", from);
             }
             case "BUILD_HOUSING" -> {

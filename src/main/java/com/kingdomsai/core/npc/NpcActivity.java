@@ -13,11 +13,26 @@ public enum NpcActivity {
     SUMMONED("atendendo ao chamado do rei"),
     MARCH("em marcha"),
     TRAIN("treinando"),
-    IMPRISONED("preso");
+    IMPRISONED("preso"),
+    // --- vida (core/life): o que gente faz quando não está trabalhando
+    EAT("comendo"),
+    REST("descansando"),
+    PRAY("rezando"),
+    READ("lendo"),
+    CHAT("conversando"),
+    VISIT("visitando alguém"),
+    WANDER("passeando"),
+    FLEE("fugindo");
 
     public final String display;
 
     NpcActivity(String display) {
         this.display = display;
+    }
+
+    /** Não está trabalhando (pausa a rotina/cadeia de trabalho). */
+    public boolean leisure() {
+        return this == SLEEP || this == SOCIALIZE || this == TALKING || this == SUMMONED || this == EAT || this == REST || this == PRAY
+                || this == READ || this == CHAT || this == VISIT || this == WANDER || this == FLEE;
     }
 }

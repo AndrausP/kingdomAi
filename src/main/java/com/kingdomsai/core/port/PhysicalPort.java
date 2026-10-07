@@ -83,6 +83,14 @@ public interface PhysicalPort {
     /** Mantém (ou solta) um chunk carregado e funcionando mesmo sem jogador por perto. */
     void forceChunk(int chunkX, int chunkZ, boolean on);
 
+    /** Algo hostil que um súdito pode ver (zumbi, esqueleto, aranha...): id do tipo ("minecraft:zombie") e onde está. */
+    record Sighting(String kind, Pos pos) {}
+
+    /** Monstros num raio (percepção dos súditos materializados). Sem mundo físico: nada. */
+    default List<Sighting> threatsNear(Pos p, int radius) {
+        return List.of();
+    }
+
     /** Plantação: crescimento 0..100 (100 = madura, pronta para colher) ou -1 se o bloco não é plantação. */
     default int growth(Pos p) {
         return -1;

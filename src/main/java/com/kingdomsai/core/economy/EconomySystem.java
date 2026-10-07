@@ -62,7 +62,7 @@ public final class EconomySystem {
         } else if (perTick >= 0) k.shortageWarned = false;
         smithy(k);
         // Fome de cada NPC (necessidade) acompanha o estoque.
-        for (Npc n : core.citizens(k.id)) n.hunger = Text.clamp(n.hunger + (k.famine ? -6 : 4), 0, 100);
+        // as refeições (e a fome de quem não come) ficam com a vida dos súditos (LifeSystem)
     }
 
     /** Reserva mínima de ferramentas no armazém (o ferreiro repõe o que os súditos gastam). */
@@ -157,7 +157,7 @@ public final class EconomySystem {
             }
             boolean enslaved = n.freedom == com.kingdomsai.core.npc.Freedom.ENSLAVED;
             double skill = 0.8 + n.trait(Trait.DISCIPLINE) / 250.0;
-            double f = skill * moraleFactor * (n.hunger < 20 ? 0.5 : 1.0) * (enslaved ? 0.6 : 1.0);
+            double f = skill * moraleFactor * (n.hunger < 20 ? 0.5 : 1.0) * (enslaved ? 0.6 : 1.0) * com.kingdomsai.core.life.LifeSystem.workFactor(n);
             switch (n.profession) {
                 case FARMER -> {
                     farmers++;

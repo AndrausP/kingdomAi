@@ -74,6 +74,39 @@ public final class Npc {
     public String equipped = "";
     /** Reino de onde veio (cativos de guerra) — para devolvê-los se forem libertados (v3). */
     public UUID originKingdomId;
+    // --- vida (core/life, v6): necessidades além de fome/energia, humor, saúde, laços e o que decidiu fazer
+    /** Vontade de companhia (100 = satisfeito; cai sozinho, sobe conversando). */
+    public double social = 70;
+    /** Saúde 0..100 (fome extrema e ferimentos tiram; comer e dormir recuperam). 0 = morre. */
+    public double health = 100;
+    /** Humor 0..100 (necessidades, casa, amigos, luto, reino); muda o ritmo de trabalho e o tom da conversa. */
+    public double mood = 60;
+    /** Medo 0..100 (viu monstro, foi atacado, guerra); passa com o tempo. */
+    public double fear = 0;
+    /** Companheiro(a): dividem a casa e o fim de tarde. */
+    public UUID partnerId;
+    /** O que decidiu fazer agora (fora das ordens): comer, descansar, visitar, rezar... */
+    public com.kingdomsai.core.life.Intention intention = new com.kingdomsai.core.life.Intention();
+    /** Objetivo pessoal de longo prazo ("ficar amigo de Bruna", "aprender a ler", "ter uma casa"). */
+    public String goal = "";
+    /** Últimas falas ouvidas/ditas (para o rei ver e para a IA lembrar). */
+    public List<String> recentTalk = new ArrayList<>();
+    /** Quando comeu pela última vez (tick). */
+    public long lastMealTick;
+    /** Conversando com (null = ninguém). */
+    public transient UUID talkingWith;
+    /** Fugindo de uma ameaça até este tick, a partir deste ponto. */
+    public transient long fleeUntil;
+    public transient Pos fleeFrom;
+    /** Itens que ele derrubou (mochila cheia) e vai recolher se passar perto. */
+    public transient Map<String, Integer> spilled = new TreeMap<>();
+
+    public void heard(String line) {
+        if (recentTalk == null) recentTalk = new ArrayList<>();
+        recentTalk.add(line);
+        while (recentTalk.size() > 8) recentTalk.remove(0);
+    }
+
     /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */
     public transient boolean onDuty;
 

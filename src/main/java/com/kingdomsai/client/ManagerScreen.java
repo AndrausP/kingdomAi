@@ -704,6 +704,13 @@ public class ManagerScreen extends Screen {
         y += 14;
         g.drawString(font, "Conselho", x, y, ACCENT);
         y += 11;
+        String roteiro = k.has("roteiro") ? k.get("roteiro").getAsString() : "";
+        if (!roteiro.isBlank())
+            for (FormattedCharSequence line : font.split(Component.literal("▶ " + roteiro), leftW - 6)) {
+                if (y > cy1 - 54) break;
+                g.drawString(font, line, x, y, WARN);
+                y += 9;
+            }
         for (FormattedCharSequence line : font.split(Component.literal(k.get("advice").getAsString()), leftW - 6)) {
             if (y > cy1 - 54) break;
             g.drawString(font, line, x, y, DIM);
@@ -793,7 +800,8 @@ public class ManagerScreen extends Screen {
             List<Component> tip = List.of(
                     Component.literal(hover.get("name").getAsString() + " — " + hover.get("title").getAsString()),
                     Component.literal(hover.get("act").getAsString() + (hover.get("task").getAsString().isBlank() ? "" : ": " + hover.get("task").getAsString())).withStyle(s -> s.withColor(0xAAAAAA)),
-                    Component.literal("Lealdade " + hover.get("loyalty").getAsInt() + " · nível " + hover.get("level").getAsString()).withStyle(s -> s.withColor(0xAAAAAA)));
+                    Component.literal("Lealdade " + hover.get("loyalty").getAsInt() + " · nível " + hover.get("level").getAsString()
+                            + (hover.has("moodWord") ? " · " + hover.get("moodWord").getAsString() : "")).withStyle(s -> s.withColor(0xAAAAAA)));
             g.renderComponentTooltip(font, tip, mx, my);
         }
     }
@@ -1040,6 +1048,16 @@ public class ManagerScreen extends Screen {
         yy += 10;
         g.drawString(font, font.plainSubstrByWidth(s.get("act").getAsString() + (s.get("task").getAsString().isBlank() ? "" : ": " + s.get("task").getAsString()), cx1 - x0), x0, yy, DIM);
         yy += 10;
+        if (s.has("mood")) {
+            int mood = s.get("mood").getAsInt();
+            g.drawString(font, font.plainSubstrByWidth("Humor " + mood + " (" + s.get("moodWord").getAsString() + ") · " + s.get("needs").getAsString(), cx1 - x0), x0, yy,
+                    mood < 35 ? 0xFFE06060 : mood < 55 ? 0xFFE0C060 : 0xFF80D080);
+            yy += 10;
+            if (!s.get("life").getAsString().isBlank()) {
+                g.drawString(font, font.plainSubstrByWidth(s.get("life").getAsString(), cx1 - x0), x0, yy, DIM);
+                yy += 10;
+            }
+        }
         for (FormattedCharSequence line : font.split(Component.literal(s.get("summary").getAsString()), cx1 - x0)) {
             if (yy > cy0 + 46) break;
             g.drawString(font, line, x0, yy, DIM);

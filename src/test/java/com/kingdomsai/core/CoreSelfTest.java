@@ -224,6 +224,16 @@ public final class CoreSelfTest {
         passed += lb[0];
         failed += lb[1];
 
+        // 20. Vida dos súditos: horário, refeições, humor, conversas, boatos, casais, reflexos, agenda pela IA, desempenho
+        int[] lf = LifeSelfTest.run();
+        passed += lf[0];
+        failed += lf[1];
+
+        // 21. Roteiro de início: o reino novo não perde no começo (comida primeiro)
+        int[] op = OpeningSelfTest.run();
+        passed += op[0];
+        failed += op[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

@@ -560,6 +560,7 @@ public final class SkillSystem {
         }
         if (!spill.isEmpty()) {
             port().drop(at, spill);
+            spill.forEach((id, c) -> n.spilled.merge(id, c, Integer::sum)); // recolhe se passar perto com espaço
             j.addLog(core.tick(), "Mochila cheia: " + summary(spill) + " ficou no chão.");
         }
     }
@@ -592,9 +593,7 @@ public final class SkillSystem {
 
     /** Trabalhando dá fome: come da ração quando precisa; sem ração e com fome, volta ao armazém. */
     private void meal(PhysicalJob j, Npc n, Kingdom k) {
-        if ((core.tick() / 20) % 30 != 0) return;
-        n.hunger = Math.max(0, n.hunger - 1.5);
-        n.energy = Math.max(0, n.energy - 0.5);
+        if ((core.tick() / 20) % 30 != 0) return; // fome e cansaço correm na vida (LifeSystem); aqui ele come da ração
         if (n.hunger < 60) {
             String ate = Inventory.eat(n);
             if (ate != null) j.addLog(core.tick(), "Comeu " + ItemNames.display(ate) + " da ração.");
@@ -977,7 +976,7 @@ public final class SkillSystem {
             case BUILDER -> 1.5;
             default -> 1.0;
         };
-        return base * (n.hunger < 20 ? 0.6 : 1.0);
+        return base * (n.hunger < 20 ? 0.6 : 1.0) * com.kingdomsai.core.life.LifeSystem.workFactor(n);
     }
 
     private Pos storageChest(Kingdom k) {

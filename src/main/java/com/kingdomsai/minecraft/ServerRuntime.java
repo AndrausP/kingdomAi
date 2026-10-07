@@ -86,6 +86,8 @@ public final class ServerRuntime {
             if (p != null && managerViewers.containsKey(player)) sendManager(p, false, lines);
         });
         core.bus().subscribeAll(this::notifyPlayers);
+        // conversas entre os súditos: quem está perto ouve (como no mundo real)
+        core.life().setChatListener(this::onNpcChat);
         // spawn marcado com a bandeira: o rei passa a renascer ali
         core.bus().subscribe(EventType.MARKER_SET, e -> {
             if (!"SPAWN".equals(e.data("kind"))) return;
@@ -276,6 +278,30 @@ public final class ServerRuntime {
         PacketDistributor.sendToPlayer(player, new Payloads.OpenChat("/k say "));
     }
 
+    /** Fala de um súdito (conversa, grito de socorro, pensamento em voz alta): só quem está perto ouve. */
+    private void onNpcChat(com.kingdomsai.core.life.LifeSystem.ChatLine line) {
+        int radius = KingdomsConfig.NPC_CHATTER_RADIUS.get();
+        if (radius <= 0 || line.at() == null) return;
+        net.minecraft.network.chat.MutableComponent msg = net.minecraft.network.chat.Component.literal("«" + line.speakerName() + "» ")
+                .withStyle(net.minecraft.ChatFormatting.GRAY)
+                .append(net.minecraft.network.chat.Component.literal(line.text()).withStyle(net.minecraft.ChatFormatting.GRAY, net.minecraft.ChatFormatting.ITALIC));
+        for (ServerPlayer p : overworld.players()) {
+            double dx = p.getX() - line.at().x(), dz = p.getZ() - line.at().z();
+            if (dx * dx + dz * dz <= (double) radius * radius) p.sendSystemMessage(msg);
+        }
+    }
+
+    /** O corpo apanhou: o Core acompanha a saúde, a memória do agressor, o medo, a fuga e o socorro dos guardas. */
+    public void onNpcHurt(KingdomNpcEntity e, DamageSource source, float amount) {
+        Npc n = e.npc();
+        if (n == null || !n.alive) return;
+        net.minecraft.world.entity.Entity attacker = source.getEntity();
+        String kind = attacker == null ? source.getMsgId() : net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(attacker.getType()).toString();
+        UUID player = attacker instanceof ServerPlayer sp ? sp.getUUID() : null;
+        Pos at = attacker == null ? null : new Pos(attacker.getBlockX(), attacker.getBlockY(), attacker.getBlockZ());
+        core.life().onHurt(n.id, Math.max(0, e.getHealth()) / e.getMaxHealth() * 100.0, kind, player, at);
+    }
+
     public void onNpcDied(KingdomNpcEntity e, DamageSource source) {
         Npc n = e.npc();
         if (n == null || !n.alive) return;
@@ -311,7 +337,7 @@ public final class ServerRuntime {
                 || e.type() == EventType.BORDER_CONTACT || e.type() == EventType.NPC_BECAME_IMPORTANT
                 || e.type() == EventType.BUILDING_STARTED || e.type() == EventType.NPC_ARRIVED
                 || e.type() == EventType.CHAIN_STARTED || e.type() == EventType.DOCUMENT_WRITTEN || e.type() == EventType.LETTER_DELIVERED
-                || e.type() == EventType.JOB_DONE;
+                || e.type() == EventType.JOB_DONE || e.type() == EventType.OPENING_STEP;
         if (!important || e.type() == EventType.PLAYER_ORDER || e.type() == EventType.KINGDOM_FOUNDED) return;
         ServerPlayer p = server.getPlayerList().getPlayer(k.rulerPlayer);
         if (p != null) p.sendSystemMessage(ChatFormat.prefixed(e.icon() + " " + e.message()));

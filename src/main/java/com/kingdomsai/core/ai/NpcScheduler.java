@@ -69,10 +69,10 @@ public final class NpcScheduler {
             }
             Intent i = decide(n, time);
             if (n.activity != NpcActivity.TALKING) n.activity = i.activity();
-            n.energy = Text.clamp(n.energy + (n.activity == NpcActivity.SLEEP ? 0.25 : -0.02), 0, 100);
             if (!n.materialized && i.target() != null && n.pos != null) {
-                // NPC abstrato: "teleporta" gradualmente para o destino (simulação agregada).
-                n.pos = moveTowards(n.pos, i.target(), i.activity() == NpcActivity.SUMMONED ? 6 : 4);
+                // NPC abstrato: "teleporta" gradualmente para o destino (simulação agregada). Fugindo corre; cansado/ferido anda devagar.
+                int step = i.activity() == NpcActivity.SUMMONED || i.activity() == NpcActivity.FLEE ? 6 : n.energy < 15 || n.health < 40 ? 3 : 4;
+                n.pos = moveTowards(n.pos, i.target(), step);
                 if (i.activity() == NpcActivity.IMPRISONED) n.pos = i.target();
             }
         }
@@ -93,20 +93,26 @@ public final class NpcScheduler {
         // em campanha (marcha, ocupação, volta) ou preso como cativo
         Intent war = core.warfare().intentFor(n);
         if (war != null) return war;
+        // reflexo: quem vê um monstro foge (até no meio de uma ordem)
+        Intent flee = core.life().emergencyIntent(n);
+        if (flee != null) return flee;
         // ordem física direta (quebrar, baú, fabricar) também passa na frente do sono
         Intent job = core.skills().intentFor(n);
         if (job != null) return job;
-        boolean night = dayTime >= 12600 && dayTime < 23400;
-        boolean evening = dayTime >= 11000 && dayTime < 12600;
         int h = Math.abs(n.id.hashCode());
 
-        if (night && n.profession != com.kingdomsai.core.npc.Profession.GUARD) {
+        // cada um dorme no seu horário (disciplina, sociabilidade; metade dos guardas no turno da noite)
+        if (core.life().asleep(n, dayTime)) {
+            n.currentTask = "Dormindo";
             Building home = n.homeId == null ? null : core.state().buildings.get(n.homeId);
             if (home != null && home.isComplete() && home.origin.y() != Integer.MIN_VALUE)
                 return new Intent(NpcActivity.SLEEP, home.centerPos(), 2);
             return new Intent(NpcActivity.SLEEP, k.spawnPoint().offset((h % 9) - 4, 0, (h / 9 % 9) - 4), 3);
         }
-        if (evening)
+        // a vida fora do serviço: conversa, refeição, descanso, lazer do fim de tarde, visita
+        Intent life = core.life().intentFor(n);
+        if (life != null) return life;
+        if (core.life().evening(n, dayTime))
             return new Intent(NpcActivity.SOCIALIZE, k.marker(Marker.GATHER, k.center).offset((h % 11) - 5, 0, (h / 11 % 7) - 3), 4);
 
         // Rotina dada pelo rei (cadeia de trabalho) vem antes da rotina da profissão.
@@ -145,6 +151,11 @@ public final class NpcScheduler {
                 yield new Intent(NpcActivity.WORK, smithy != null ? smithy.centerPos() : k.center.offset(-5, 0, -5), 2);
             }
             case GUARD -> {
+                Pos alarm = core.life().alertFor(n);
+                if (alarm != null) {
+                    n.currentTask = "Atender a um pedido de socorro";
+                    yield new Intent(NpcActivity.PATROL, alarm, 2);
+                }
                 // a ronda segue a borda da vila (ou o pé da muralha, se houver)
                 var vb = com.kingdomsai.core.construction.VillageWall.bounds(core, k);
                 boolean walled = com.kingdomsai.core.construction.VillageWall.existing(core, k) != null;
@@ -155,6 +166,11 @@ public final class NpcScheduler {
                 yield new Intent(NpcActivity.PATROL, vb.center(k.center.y()).offset((int) (Math.cos(a) * r), 0, (int) (Math.sin(a) * r)), 3);
             }
             case SOLDIER -> {
+                Pos alarm = core.life().alertFor(n);
+                if (alarm != null) {
+                    n.currentTask = "Atender a um pedido de socorro";
+                    yield new Intent(NpcActivity.PATROL, alarm, 2);
+                }
                 Building barracks = nearest(k, "barracks", n.pos);
                 n.currentTask = "Treinar";
                 yield new Intent(NpcActivity.GUARD, barracks != null ? barracks.entrance() : k.center.offset(-6, 0, 6), 4);

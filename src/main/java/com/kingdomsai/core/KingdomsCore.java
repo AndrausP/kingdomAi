@@ -68,6 +68,12 @@ public final class KingdomsCore {
     private final com.kingdomsai.core.military.MilitarySystem warfare;
     private final com.kingdomsai.core.economy.TreasurySystem treasury;
     private final com.kingdomsai.core.event.AwayReport reports;
+    private final com.kingdomsai.core.life.LifeSystem life;
+    private final com.kingdomsai.core.ai.Opening opening;
+    /** Desempenho: tempo médio e máximo de um tick do Core (ms) na última janela de 60 s. */
+    private final long[] perfWindow = new long[60];
+    private long perfSecondNanos, perfMaxNanos, perfWindowMax;
+    private int perfIdx;
 
     public KingdomsCore(WorldState state, CoreConfig config) {
         this.state = state;
@@ -94,6 +100,8 @@ public final class KingdomsCore {
         this.warfare = new com.kingdomsai.core.military.MilitarySystem(this);
         this.treasury = new com.kingdomsai.core.economy.TreasurySystem(this);
         this.reports = new com.kingdomsai.core.event.AwayReport(this);
+        this.life = new com.kingdomsai.core.life.LifeSystem(this);
+        this.opening = new com.kingdomsai.core.ai.Opening(this);
         wireReactions();
         if (!state.kitsGranted) { // save antigo (v4 ou antes): moradores recebem o kit do ofício; reinos, as reservas
             for (Npc n : allAlive()) if (n.bag.keySet().stream().noneMatch(com.kingdomsai.core.skill.Inventory::isTool)) com.kingdomsai.core.skill.Kit.grantStarter(n);
@@ -174,9 +182,11 @@ public final class KingdomsCore {
 
     /** Avança a simulação em 1 tick do jogo (chamado 20x por segundo pelo adaptador). */
     public void step() {
+        long t0 = System.nanoTime();
         state.tick++;
         long t = state.tick;
         if (t % 20 == 0) {
+            life.tickSecond();   // necessidades, humor, intenções, conversas, reflexos (antes do agendador decidir o destino)
             scheduler.tickSecond();
             work.tickSecond();   // zera e marca quem está em cadeia (onDuty)
             skills.tickSecond(); // ordens físicas marcam por cima
@@ -193,8 +203,35 @@ public final class KingdomsCore {
             warfare.strategicTick();
             if (config.diplomacyEnabled) diplomacy.tick();
             if (config.aiKingdomsEnabled) director.tick();
+            opening.tick(); // roteiro de início dos reinos dos jogadores
         }
         bus.dispatch();
+        long dt = System.nanoTime() - t0;
+        perfSecondNanos += dt;
+        perfMaxNanos = Math.max(perfMaxNanos, dt);
+        if (t % 20 == 0) {
+            perfWindow[perfIdx++ % perfWindow.length] = perfSecondNanos;
+            perfWindowMax = perfIdx % perfWindow.length == 0 ? perfMaxNanos : Math.max(perfWindowMax, perfMaxNanos);
+            perfSecondNanos = 0;
+            if (perfIdx % perfWindow.length == 0) perfMaxNanos = 0;
+        }
+    }
+
+    /** Milissegundos médios por tick do Core no último minuto (20 ticks = 1 s) e o pior tick. */
+    public double[] perf() {
+        int n = Math.min(perfIdx, perfWindow.length);
+        long sum = 0;
+        for (int i = 0; i < n; i++) sum += perfWindow[i];
+        double avg = n == 0 ? 0 : sum / (double) n / 20 / 1e6;
+        return new double[]{avg, Math.max(perfWindowMax, perfMaxNanos) / 1e6};
+    }
+
+    public com.kingdomsai.core.life.LifeSystem life() {
+        return life;
+    }
+
+    public com.kingdomsai.core.ai.Opening opening() {
+        return opening;
     }
 
     // ------------------------------------------------------------------ founding

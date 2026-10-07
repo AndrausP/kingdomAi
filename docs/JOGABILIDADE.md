@@ -103,6 +103,36 @@ O NPC do Minecraft é só o corpo. O estado real fica no Core (`Npc`: profissão
 | Só em terra do reino; a IA nunca quebra bloco direto (proposta → `ActionSystem` → `JobPlanner` → `SkillSystem` revalida território, proteção, ferramenta, alcance, etapa e limite por segundo) | segurança | `mina fora do território → recusa`, `limite global` |
 | Frases: "produza madeira", "trabalhe na mina/no bosque/na fazenda", "cuide da fazenda", "colha o trigo", "minere ferro", "produza 64 toras"; "leve ao ferreiro"/"daqui pra frente" continuam rotinas (cadeias); "cuide da comida" continua com o conselho | chat basta | `'produza madeira' → lenha` … |
 
+## Roteiro de início (`OpeningSelfTest`)
+
+| Regra | Por quê | Teste |
+|---|---|---|
+| Etapas na ordem: comida → armazém → casas → madeira/pedra → guarda → vida na vila; `/k roteiro` mostra ✓/▶ e o que dizer | o começo tem uma ordem certa | `/k roteiro mostra o checklist com a comida primeiro` |
+| Nos 3 primeiros dias o conselheiro cuida da etapa da vez (no máximo 1 vez por minuto), pelos validadores, em nome do rei; avisa o que fez e o próximo passo | "não perder no começo" sem tirar a liberdade (`/k roteiro auto off`) | `o conselheiro fez a fazenda`, `armazém e casas também vieram do roteiro`, `o rei foi avisado` |
+| Comida: fazenda primeiro; depois camponeses para a lavoura; nunca tira o único lenhador/minerador; se a população cresce e a comida volta a faltar, a etapa reabre | comida é conferida sempre | `ninguém morreu de fome, o reino não passou fome` |
+| Materiais: com bosque e mina marcados, põe lenhador e minerador em trabalho contínuo (e repõe o ofício se faltar) | material de verdade | `com bosque e mina marcados, lenhador e minerador foram trabalhar` |
+| Carência: nos 2 primeiros dias a fome enfraquece (saúde ≥ 20) mas não mata; depois volta a matar | erro de começo não é fim de jogo | `faminto no reino novo enfraquece mas não morre`, `depois dos primeiros dias, a fome mata` |
+| Largado sem roteiro, o reino entra em fome e recebe o alerta de comida | o roteiro faz diferença | `largado sem roteiro, o reino entra em fome` |
+
+## Vida dos súditos (`LifeSelfTest`)
+
+| Regra | Por quê | Teste |
+|---|---|---|
+| Necessidades a cada segundo: fome (mais rápida trabalhando), energia (sono recupera), companhia (cai sozinho, sobe conversando), medo (passa), saúde (fome extrema tira; comer/dormir/descansar recupera; 0 = morre "de fome") | corpo de gente | `a fome volta com o tempo`, `sem comer, a saúde cai até a morte` |
+| Horário pessoal: acorda/dorme pela disciplina e sociabilidade; com 2+ guardas, metade faz turno da noite | ninguém é igual | `disciplinado acorda mais cedo`, `sociável vai dormir mais tarde`, `um faz o turno da noite` |
+| Refeições: café em casa, almoço no serviço (marmita), jantar; com fome fora de hora, vai comer; celeiro vazio = come quase nada | rotina humana | `na hora do almoço ele come` |
+| Humor = necessidades + casa + par + amigos − luto − medo + reino + liberdade; muda ritmo de trabalho (0,85×–1,1×) e lealdade; infeliz demais e desleal vai embora | gente infeliz rende menos e parte | `humor reflete a vida`, `humor muda o ritmo de trabalho` |
+| Fim de tarde pela personalidade e pelo objetivo pessoal (praça/taverna, capela, biblioteca, visita ao par/amigo, passeio, casa); o sorteio muda a cada dia | lazer de cada um | `religioso vai rezar`, `curioso vai ler`, `o sociável vai para a praça` |
+| Conversas: perto (≤ 6 blocos), em lazer, uma fala a cada 3–7 s, no máximo 45 s; assunto pela vida (boato, necessidade, reino, trabalho, amizade, briga, namoro, fé); companhia sobe; afeto cresce devagar | vida social | `conversaram de verdade`, `conversar mata a solidão e aproxima` |
+| Boato: A conta a B uma lembrança forte e recente que B não sabe; B lembra "A me contou: ..." com 70% da importância (abaixo de 35 para de correr) | transmissão cultural (Project Sid) | `o boato correu a vila`, `quem ouviu lembra quem contou, com menos certeza` |
+| Rivais brigam (rivalidade sobe, os dois lembram, evento); afeição ≥ 85 e confiança ≥ 60 dos dois + namoro → casal; mudam para a mesma casa e a vaga vai a quem dorme ao relento; luto se um morre | laços | `rivais discutem`, `viraram um casal`, `foram morar juntos`, `o par fica de luto` |
+| Reflexo: civil materializado que vê monstro a ≤ 12 blocos foge para casa/praça (na direção oposta), grita, lembra, alerta; guarda/soldado livre vai ao grito; o susto passa | sobrevivência | `viu o zumbi: foge`, `grita por socorro`, `o guarda vai até o grito` |
+| Agressão: saúde acompanha o corpo; se foi o rei, medo +20, afeto −15, lealdade −6, lembrança forte (vira boato); civis fogem do agressor | consequência | `apanhou do rei: lembra, teme e perde lealdade` |
+| Ferido (< 35) ou exausto encerra a conversa e vai descansar em casa | prioridade do corpo | `ferido vai descansar em casa` |
+| Recolhe do chão só o que ele derrubou com a mochila cheia | nunca pega o que é do jogador | `recolhe o que derrubou` |
+| IA (importantes, ~2 min, limite próprio por minuto): propõe `LIFE{do,target,minutes,reason,goal}`; pessoa/lugar inexistente ou ação fora da lista = ignorado; conversa dos importantes escrita pela IA (2–5 falas) | PIANO-leve: intenção única, validada | `a IA decidiu a agenda`, `pessoa inventada pela IA é ignorada`, `conversa do importante escrita pela IA` |
+| Desempenho: 250+ súditos com a vida inteira ligada | escala | `250+ súditos ... ms por tick` (≈ 0,1 ms) |
+
 ## Guerra e domínio
 
 Liberdade total pelo chat; o jogo cobra as consequências. Tudo passa pelo `ActionSystem` (validadores) e é testado em `MilitarySelfTest`.
@@ -146,8 +176,8 @@ Limites conhecidos: a batalha é simulada (os NPCs marcham de verdade, mas o cho
 
 ## O que só o build e o jogo confirmam
 
-O Core é testado aqui (375 verificações). O adaptador do Minecraft **não pôde ser compilado neste ambiente** (sem acesso aos servidores do NeoForge/Mojang). As APIs do NeoForge usadas foram conferidas no código-fonte oficial do 1.21.1; as chamadas do Minecraft "puro" abaixo foram escritas pela documentação e precisam do `./gradlew build`:
-`Block.getDrops`, `BlockState.spawnAfterBreak`, `CropBlock.isMaxAge`, `IntegerProperty.getPossibleValues`, `SoundEvents.HOE_TILL`, `ItemStack.isCorrectToolForDrops`, `Level.destroyBlock/destroyBlockProgress/mayInteract`, `ChestBlock.getContainer`, `HopperBlockEntity.addItem`, `RecipeManager.getAllRecipesFor` + `ShapedRecipe.getWidth/getHeight` + `Ingredient.getItems`, `ServerLevel.setChunkForced/getForcedChunks/sendParticles`, `ServerPlayer.setRespawnPosition`, `CustomData.update`, `Containers.dropItemStack`. (`ServerChatEvent.getRawText` foi conferido no código do NeoForge 1.21.1.)
+O Core é testado aqui (430 verificações). O adaptador do Minecraft **não pôde ser compilado neste ambiente** (sem acesso aos servidores do NeoForge/Mojang). As APIs do NeoForge usadas foram conferidas no código-fonte oficial do 1.21.1; as chamadas do Minecraft "puro" abaixo foram escritas pela documentação e precisam do `./gradlew build`:
+`Block.getDrops`, `BlockState.spawnAfterBreak`, `CropBlock.isMaxAge`, `IntegerProperty.getPossibleValues`, `SoundEvents.HOE_TILL`, `AvoidEntityGoal`, `LivingEntity.hurt/take`, `ItemEntity.hasPickUpDelay`, `Level.getEntitiesOfClass(Monster)`, `ItemStack.isCorrectToolForDrops`, `Level.destroyBlock/destroyBlockProgress/mayInteract`, `ChestBlock.getContainer`, `HopperBlockEntity.addItem`, `RecipeManager.getAllRecipesFor` + `ShapedRecipe.getWidth/getHeight` + `Ingredient.getItems`, `ServerLevel.setChunkForced/getForcedChunks/sendParticles`, `ServerPlayer.setRespawnPosition`, `CustomData.update`, `Containers.dropItemStack`. (`ServerChatEvent.getRawText` foi conferido no código do NeoForge 1.21.1.)
 
 Roteiro rápido no jogo (mundo novo, perfil `kingdoms`):
 1. Entrar → recebe a Bandeira; marcar o spawn; morrer → renasce no spawn.
@@ -156,6 +186,8 @@ Roteiro rápido no jogo (mundo novo, perfil `kingdoms`):
 4. Ao minerador, mirando no chão: "cave um buraco 3x3x3 aqui" → rachaduras, blocos somem, escada no canto; voar 300 blocos e voltar → terminou + relatório.
 5. "corte essa árvore" numa árvore → tronco/folhas, muda replantada.
 5b. Marcar o bosque e ao lenhador: "produza madeira" → ele vai, corta, replanta, volta cheio ao armazém; `/k bag <nome>` mostra o machado gastando. Na mina marcada: "trabalhe na mina" → galeria com tochas. Na fazenda: "cuide da fazenda".
+5c. Mundo novo: o chat mostra o roteiro; em ~10 min o conselheiro começa a fazenda e avisa; `/k roteiro` mostra ✓. Bata num súdito: ele grita, foge e `/k npc inspect` mostra "O rei me bateu".
+5d. Fim de tarde perto da praça: conversas aparecem em cinza no chat; à noite um zumbi faz os civis fugirem e o guarda ir até lá.
 6. Ao minerador: "daqui pra frente minere ferro e leve para o ferreiro" (com forja e armazém) → `/k chains`.
 7. Com Xaero's Minimap: Manager (M) não cobre o minimapa.
 

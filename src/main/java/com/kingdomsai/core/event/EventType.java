@@ -74,5 +74,10 @@ public enum EventType {
     SMITHY,
     TOOL_BROKEN,
     WORK_SHIFT,
-    STORAGE_TRIP
+    STORAGE_TRIP,
+    NPC_ARGUMENT,
+    NPC_COUPLE,
+    NPC_HURT,
+    THREAT_SPOTTED,
+    OPENING_STEP
 }

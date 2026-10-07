@@ -36,7 +36,12 @@ public final class Migrations {
             root.addProperty("kitsGranted", false);
             root.addProperty("schemaVersion", 5);
         }
-        // if (v < 6) { ... }
+        if (v < 6) {
+            // v5 → v6: vida dos súditos — necessidades (companhia, saúde, medo), humor, par, intenção, objetivo pessoal, falas recentes.
+            // Campos novos com padrão; nada a converter.
+            root.addProperty("schemaVersion", 6);
+        }
+        // if (v < 7) { ... }
     }
 
     /** Garante campos não nulos após carregar (Gson ignora inicializadores para campos ausentes em alguns casos). */
@@ -102,6 +107,7 @@ public final class Migrations {
             if (k.laws == null) k.laws = new Kingdom.Laws();
             if (k.markers == null) k.markers = new EnumMap<>(com.kingdomsai.core.kingdom.Marker.class);
             if (k.goods == null) k.goods = new TreeMap<>();
+            if (k.openingDone == null) k.openingDone = new LinkedHashSet<>();
         }
         for (Npc n : s.npcs.values()) {
             if (n.relations == null) n.relations = new HashMap<>();
@@ -119,6 +125,16 @@ public final class Migrations {
             if (n.wear == null) n.wear = new TreeMap<>();
             if (n.gear == null) n.gear = new TreeMap<>();
             if (n.skillXp == null) n.skillXp = new TreeMap<>();
+            // v6: vida
+            if (n.intention == null) n.intention = new com.kingdomsai.core.life.Intention();
+            if (n.intention.kind == null) n.intention.kind = com.kingdomsai.core.life.Intention.Kind.NONE;
+            if (n.intention.reason == null) n.intention.reason = "";
+            if (n.intention.place == null) n.intention.place = "";
+            if (n.intention.source == null) n.intention.source = "rotina";
+            if (n.goal == null) n.goal = "";
+            if (n.recentTalk == null) n.recentTalk = new ArrayList<>();
+            if (n.spilled == null) n.spilled = new TreeMap<>();
+            if (n.partnerId != null && (s.npcs.get(n.partnerId) == null || !s.npcs.get(n.partnerId).alive)) n.partnerId = null;
             // quem estava numa campanha que sumiu do save volta para casa
             if (n.campaignId != null && (!s.campaigns.containsKey(n.campaignId) || !s.campaigns.get(n.campaignId).live())) n.campaignId = null;
         }

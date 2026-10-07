@@ -58,6 +58,7 @@ public final class LaborSelfTest {
         cli.setNotifier((p, lines) -> async.addAll(lines));
         cli.execute(player, "Andraus", new Pos(0, 64, 0), "found Reino do Trabalho");
         Kingdom k = core.kingdomOfPlayer(player);
+        k.openingAuto = false; // o roteiro de início tem o próprio teste (aqui ele faria outra fazenda)
         core.updatePlayerPos(player, new Pos(0, 64, 0));
         Building storage = complete(core.construction().planAt(k, BlueprintLibrary.get("storage"), new Pos(-30, 64, 10), true));
         for (var pl : storage.blueprint().placements())
@@ -274,8 +275,12 @@ public final class LaborSelfTest {
         k.markers.put(Marker.FOREST, t6);
         double food = k.get(ResourceType.FOOD);
         Map<String, Integer> pantry = new TreeMap<>(k.goods);
-        k.add(ResourceType.FOOD, -food);
+        cfg.economicTickSeconds = 100000; // as fazendas param de produzir durante o teste (o celeiro fica vazio mesmo)
+        for (Pos c : core.treasury().chests(k)) world.chests.get(c).keySet().removeIf(id -> Inventory.nutrition(id) > 0); // tiram o pão dos baús
+        core.treasury().sync(k);
+        k.add(ResourceType.FOOD, -k.get(ResourceType.FOOD));
         k.goods.keySet().removeIf(id -> Inventory.nutrition(id) > 0);
+        core.treasury().sync(k);
         lumber.bag.keySet().removeIf(id -> Inventory.nutrition(id) > 0);
         say(lumber, "Produza madeira.");
         PhysicalJob hungry = job(lumber);
@@ -285,9 +290,11 @@ public final class LaborSelfTest {
         check("sem comida no armazém: trabalha com fome, sem vaivém", hungry.status.live() && trips <= 2
                 && hungry.log.stream().anyMatch(l -> l.contains("trabalhando com fome")));
         core.skills().cancel(hungry, "teste");
+        cfg.economicTickSeconds = 10;
         k.add(ResourceType.FOOD, food);
         k.goods.clear();
         k.goods.putAll(pantry);
+        core.treasury().sync(k);
 
         // --- 10. save/load: kit, desgaste, prática e trabalho contínuo sobrevivem
         Path tmp = Files.createTempDirectory("kai-labor").resolve("kingdomsai.json");

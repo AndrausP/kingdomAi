@@ -317,6 +317,14 @@ public final class SkillSelfTest {
         long time = -1;
         /** Plantações: crescimento 0..100 por posição de trigo. */
         final Map<Pos, Integer> crops = new HashMap<>();
+        /** Monstros que os súditos materializados podem ver. */
+        final List<PhysicalPort.Sighting> monsters = new ArrayList<>();
+
+        public List<PhysicalPort.Sighting> threatsNear(Pos p, int radius) {
+            List<PhysicalPort.Sighting> out = new ArrayList<>();
+            for (PhysicalPort.Sighting m : monsters) if (m.pos().distXZ(p) <= radius) out.add(m);
+            return out;
+        }
 
         String id(Pos p) {
             String s = blocks.get(p);
