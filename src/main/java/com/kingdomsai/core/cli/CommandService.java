@@ -277,8 +277,19 @@ public final class CommandService {
             case "bag", "mochila" -> {
                 Npc n = a.length > 1 ? core.findNpc(k.id, rest(a, 1)) : core.npc(selected(player));
                 if (n == null) out.add("✗ Uso: bag <nome> (ou selecione alguém).");
-                else out.add("Mochila de " + n.name + ": " + com.kingdomsai.core.skill.SkillSystem.summary(n.bag)
-                        + " (" + n.bag.values().stream().mapToInt(Integer::intValue).sum() + "/" + com.kingdomsai.core.skill.JobPlanner.BAG_CAPACITY + ")");
+                else {
+                    out.add("# Mochila de " + n.name + " (" + n.profession.display + ") — " + com.kingdomsai.core.skill.Inventory.slotsUsed(n.bag)
+                            + "/" + com.kingdomsai.core.skill.Inventory.SLOTS + " espaços");
+                    out.add(n.bag.isEmpty() ? "vazia" : com.kingdomsai.core.skill.SkillSystem.summary(n.bag));
+                    out.add("Kit: " + com.kingdomsai.core.skill.Kit.describe(n));
+                    if (!n.gear.isEmpty()) {
+                        List<String> worn = new ArrayList<>();
+                        n.gear.forEach((slot, id) -> worn.add(com.kingdomsai.core.skill.ItemNames.display(id)));
+                        out.add("Vestindo: " + String.join(", ", worn));
+                    }
+                    var lack = com.kingdomsai.core.skill.Kit.missing(n);
+                    if (!lack.isEmpty()) out.add("⚠ Falta para trabalhar: " + String.join(", ", lack.stream().map(com.kingdomsai.core.skill.Kit.Need::label).toList()));
+                }
             }
             case "chains", "cadeias", "rotinas" -> chains(k, out);
             case "chain", "cadeia", "rotina" -> chain(k, player, a, out);

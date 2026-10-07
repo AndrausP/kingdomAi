@@ -60,8 +60,80 @@ public final class EconomySystem {
                         "Falta de comida: estoque para ~" + (int) (food / -perTick * core.config().economicTickSeconds / 60) + " min.");
             }
         } else if (perTick >= 0) k.shortageWarned = false;
+        smithy(k);
         // Fome de cada NPC (necessidade) acompanha o estoque.
         for (Npc n : core.citizens(k.id)) n.hunger = Text.clamp(n.hunger + (k.famine ? -6 : 4), 0, 100);
+    }
+
+    /** Reserva mínima de ferramentas no armazém (o ferreiro repõe o que os súditos gastam). */
+    public static final Map<String, Integer> TOOL_RESERVE = Map.of("axe", 2, "pickaxe", 2, "hoe", 1, "shovel", 1);
+
+    /**
+     * Ferreiro: funde o minério bruto que os mineradores guardaram (1 carvão funde 8) e forja as ferramentas que faltam
+     * na reserva do armazém — de ferro se houver barras, senão de pedra. Tudo sai e entra pelo estoque (e aparece nos baús).
+     */
+    private void smithy(Kingdom k) {
+        int smiths = 0;
+        for (Npc n : core.citizens(k.id)) if (n.profession == Profession.BLACKSMITH && n.isFree() && !n.onDuty) smiths++;
+        if (smiths == 0) return;
+        double rate = smiths * (core.completedOf(k.id, "smithy") > 0 ? 0.5 : 0.25);
+        // 1) fundir
+        int raw = k.goods.getOrDefault("minecraft:raw_iron", 0);
+        if (raw > 0) {
+            k.smeltProgress += rate * 3;
+            int smelted = 0;
+            while (k.smeltProgress >= 1 && raw > 0) {
+                if (k.fuelLeft <= 0) {
+                    String fuel = k.goods.getOrDefault("minecraft:coal", 0) > 0 ? "minecraft:coal" : k.goods.getOrDefault("minecraft:charcoal", 0) > 0 ? "minecraft:charcoal" : null;
+                    if (fuel == null) break;
+                    k.goods.merge(fuel, -1, Integer::sum);
+                    k.goods.values().removeIf(v -> v <= 0);
+                    k.fuelLeft = 8;
+                }
+                k.goods.merge("minecraft:raw_iron", -1, Integer::sum);
+                k.goods.values().removeIf(v -> v <= 0);
+                k.add(ResourceType.IRON, 1);
+                k.fuelLeft--;
+                k.smeltProgress -= 1;
+                raw--;
+                smelted++;
+            }
+            if (raw == 0 || k.fuelLeft <= 0 && k.goods.getOrDefault("minecraft:coal", 0) == 0) k.smeltProgress = Math.min(k.smeltProgress, 1);
+            if (smelted > 0 && raw > 0 && k.fuelLeft <= 0 && k.goods.getOrDefault("minecraft:coal", 0) == 0)
+                core.bus().publish(core.tick(), EventType.SMITHY, GameEvent.Severity.WARN, k.id, null,
+                        "A forja de " + k.name + " ficou sem carvão: há " + raw + " minério(s) de ferro esperando.");
+        }
+        // 2) forjar o que falta na reserva
+        String type = null;
+        for (var e : TOOL_RESERVE.entrySet()) {
+            int have = 0;
+            for (var g : k.goods.entrySet()) if (e.getKey().equals(com.kingdomsai.core.skill.Inventory.toolType(g.getKey()))) have += g.getValue();
+            if (have < e.getValue()) {
+                type = e.getKey();
+                break;
+            }
+        }
+        if (type == null) {
+            k.forgeProgress = 0;
+            return;
+        }
+        int ingots = switch (type) {
+            case "hoe" -> 2;
+            case "shovel" -> 1;
+            default -> 3;
+        };
+        boolean iron = k.get(ResourceType.IRON) >= ingots;
+        if (!iron && (k.get(ResourceType.STONE) < ingots || k.get(ResourceType.WOOD) < 2)) return;
+        k.forgeProgress += rate;
+        if (k.forgeProgress < 1) return;
+        k.forgeProgress -= 1;
+        if (iron) k.add(ResourceType.IRON, -ingots);
+        else k.add(ResourceType.STONE, -ingots);
+        k.add(ResourceType.WOOD, -2); // cabo (2 gravetos)
+        String item = "minecraft:" + (iron ? "iron_" : "stone_") + type;
+        k.goods.merge(item, 1, Integer::sum);
+        core.bus().publish(core.tick(), EventType.SMITHY, GameEvent.Severity.INFO, k.id, null,
+                "O ferreiro de " + k.name + " fez " + com.kingdomsai.core.skill.ItemNames.display(item) + " (reserva no armazém).");
     }
 
     /** Variação por tick econômico — usada também pelo conselheiro e pelo HUD. */

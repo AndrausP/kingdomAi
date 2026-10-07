@@ -83,6 +83,16 @@ public interface PhysicalPort {
     /** Mantém (ou solta) um chunk carregado e funcionando mesmo sem jogador por perto. */
     void forceChunk(int chunkX, int chunkZ, boolean on);
 
+    /** Plantação: crescimento 0..100 (100 = madura, pronta para colher) ou -1 se o bloco não é plantação. */
+    default int growth(Pos p) {
+        return -1;
+    }
+
+    /** Ara a terra com a enxada: terra/grama com ar em cima vira terra arada. */
+    default boolean till(UUID npc, Pos p) {
+        return false;
+    }
+
     /** Sem mundo físico (testes de outras partes, servidor sem o adaptador). */
     PhysicalPort NONE = new PhysicalPort() {
         public boolean isLoaded(Pos p) {

@@ -445,7 +445,17 @@ public final class RuleInterpreter {
         boolean routine = t.matches(".*\\b(ferreiro|forja|leve (para|ao|a)|leva (para|ao)|levem (para|ao)|entregue ao|daqui (pra|para) frente|todo dia|sempre|rotina|continuamente)\\b.*");
         Matcher gather = Pattern.compile("\\b(colet\\w*|busqu\\w*|buscar|junt\\w*|extra[ia]\\w*|miner\\w*|pegu\\w*|traga\\w*|tragam)\\s+(?:(\\d+|um|uma|dois|duas|tres|cinco|dez|vinte|trinta)\\s+)?(?:de\\s+)?(?:um pouco de\\s+)?"
                 + "(pedras?|rochas?|terra|areia|cascalho|argila|carvao|ferro|cobre|madeira|lenha|troncos?)\\b").matcher(t);
-        if (t.matches(".*\\b(limp\\w*|derrub\\w*|cort\\w*|tir\\w*|remov\\w*|desmat\\w*)\\b.*\\barvores\\b.*") || t.matches(".*\\bdesmat\\w*\\b.*")) {
+        String labor = routine ? null : laborWord(t);
+        if (labor != null) {
+            // "produza madeira", "trabalhe na mina", "cuide da fazenda", "colha o trigo", "minere 20 ferro": trabalho que se repete
+            p = params("kind", "labor", "labor", labor);
+            Matcher ore = Pattern.compile("\\b(ferro|carvao|cobre|ouro)\\b").matcher(t);
+            if (labor.equals("ore") && ore.find()) p.put("item", ore.group(1));
+            Matcher q = Pattern.compile("(\\d+)\\s+(?:de\\s+)?(?:" + LABOR_NOUN + ")").matcher(t);
+            if (q.find()) p.put("quota", q.group(1));
+            Matcher r = Pattern.compile("raio de (\\d+)").matcher(t);
+            if (r.find()) p.put("radius", r.group(1));
+        } else if (t.matches(".*\\b(limp\\w*|derrub\\w*|cort\\w*|tir\\w*|remov\\w*|desmat\\w*)\\b.*\\barvores\\b.*") || t.matches(".*\\bdesmat\\w*\\b.*")) {
             // "limpe as árvores da região", "derrubem todas as árvores perto da vila"
             p = params("kind", "clear_trees");
             Matcher r = Pattern.compile("raio de (\\d+)").matcher(t);
@@ -518,6 +528,30 @@ public final class RuleInterpreter {
         Npc who = speaker != null && speaker.office != Office.ADVISOR ? speaker : npcMentioned(k, t, null);
         if (who != null) p.put("npc", who.name);
         return p;
+    }
+
+    private static final String LABOR_NOUN = "madeira|lenha|toras|troncos|bosque|floresta|pedras?|pedreira|rochas?|mina|minerios?|ferro|carvao|cobre|ouro|"
+            + "fazenda|lavoura|plantacao|plantacoes|horta|trigo|trigal|colheita";
+
+    /**
+     * Trabalho contínuo do ofício (o súdito vai ao local, trabalha, volta cheio, guarda, reabastece e retorna):
+     * wood | stone | ore | farm, ou null. "Leve ao ferreiro"/"daqui pra frente" ficam com as rotinas (cadeias).
+     */
+    public static String laborWord(String t) {
+        if (t.matches(".*\\b(ferreiro|forja|leve|levem|leva|entregue|entreguem|carta|escreva|escrevam|livro)\\b.*") || t.matches(".*\\bplant\\w*.*\\bcolh\\w*.*")) return null;
+        Matcher m = Pattern.compile("\\b(" + LABOR_NOUN + ")\\b").matcher(t);
+        if (!m.find()) return null;
+        String noun = m.group(1);
+        String kind = noun.matches("madeira|lenha|toras|troncos|bosque|floresta") ? "wood" : noun.matches("pedras?|pedreira|rochas?") ? "stone"
+                : noun.matches("mina|minerios?|ferro|carvao|cobre|ouro") ? "ore" : "farm";
+        String place = "(na|no|da|do|pela|pelo|para a|para o|pra)\\s+(mina|pedreira|bosque|floresta|fazenda|lavoura|plantacao|horta)";
+        if (t.matches(".*\\b(aument\\w*|melhor\\w*|garant\\w*|resolv\\w*)\\b.*")) return null; // objetivo do conselho (GOAL)
+        if (t.matches(".*\\b(produza|produzam|produzir|produz)\\b.*")) return kind;
+        if (t.matches(".*\\b(trabalhe|trabalhem|trabalhar|va trabalhar|vao trabalhar)\\b.*") && t.matches(".*\\b" + place + "\\b.*")) return kind;
+        if (t.matches(".*\\b(cuide|cuidem|cuidar|tome conta|tomem conta|toque|toquem)\\b.*") && kind.equals("farm") && !noun.equals("colheita")) return "farm";
+        if (t.matches(".*\\b(colha|colham|colher|va colher|vao colher)\\b.*") && kind.equals("farm")) return "farm";
+        if (t.matches(".*\\b(minere|minerem|minerar|va minerar|vao minerar)\\b.*") && kind.equals("ore")) return "ore";
+        return null;
     }
 
     /** Só vira ordem de fabricar se o item existe e tem receita (senão "faça uma casa" seria um item). */

@@ -42,6 +42,16 @@ public final class Kingdom {
     public Map<ResourceType, Integer> treasurySeen;
     /** Itens do registro que não couberam nos baús (v4). */
     public int treasuryOverflow;
+    /** Bens guardados que não são recurso (ferramentas, sementes, tochas, carvão, minério bruto, armaduras) (v5). */
+    public Map<String, Integer> goods = new java.util.TreeMap<>();
+    /** O que havia de bens nos baús na última conferência (v5). */
+    public Map<String, Integer> treasurySeenGoods;
+    /** Baús que formavam o tesouro na última conferência ("x y z") — para mudar de lugar sem duplicar (v5). */
+    public List<String> treasuryChests;
+    /** Ferreiro: progresso da ferramenta/fundição em andamento (v5). */
+    public double forgeProgress, smeltProgress;
+    /** Fundições que ainda rendem do último carvão queimado (1 carvão funde 8) (v5). */
+    public int fuelLeft;
     public double reliability = 60;
 
     /** Pontos marcados pelo rei com a Bandeira do Reino (spawn, praça, mina, bosque). */

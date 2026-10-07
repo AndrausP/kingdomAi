@@ -158,7 +158,7 @@ public final class OrdersSelfTest {
         PhysicalJob clear = job(lumber);
         check("\"limpe as árvores da região\" vira ordem com várias árvores", clear != null
                 && clear.tasks.stream().filter(t -> t.kind == PhysicalJob.Kind.CHOP).count() == 3);
-        check("…e termina guardando no armazém", clear != null && clear.tasks.stream().anyMatch(t -> t.kind == PhysicalJob.Kind.PUT));
+        check("…e termina guardando no armazém", clear != null && clear.tasks.get(clear.tasks.size() - 1).kind == PhysicalJob.Kind.STORE);
         double woodBefore = k.get(ResourceType.WOOD);
         runUntilDone(clear, 600);
         check("árvores derrubadas de verdade", world.isAir(new Pos(20, 66, 24)) && world.isAir(new Pos(26, 66, 18)) && world.isAir(new Pos(16, 66, 16)));

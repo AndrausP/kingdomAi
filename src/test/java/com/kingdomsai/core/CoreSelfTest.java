@@ -219,6 +219,11 @@ public final class CoreSelfTest {
         passed += cc[0];
         failed += cc[1];
 
+        // 19. Mochila e kit por ofício; trabalho contínuo (lenhador, mineiro, fazendeiro), longe da vista e validações
+        int[] lb = LaborSelfTest.run();
+        passed += lb[0];
+        failed += lb[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

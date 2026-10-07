@@ -112,42 +112,103 @@ public final class TreasurySystem {
         return out;
     }
 
+    /** Contagem física dos bens (tudo que não é recurso: ferramentas, sementes, tochas, carvão, minério bruto...). */
+    public Map<String, Integer> readGoods(List<Pos> chests) {
+        Map<String, Integer> out = new TreeMap<>();
+        for (Pos c : chests) {
+            Map<String, Integer> inv = core.physical().container(c);
+            if (inv == null) continue;
+            for (var e : inv.entrySet()) if (unit(e.getKey()) == null && e.getValue() > 0) out.merge(e.getKey(), e.getValue(), Integer::sum);
+        }
+        return out;
+    }
+
     public void syncAll() {
         for (Kingdom k : core.state().kingdoms.values()) sync(k);
     }
 
+    private static List<String> keys(List<Pos> chests) {
+        List<String> out = new ArrayList<>();
+        for (Pos p : chests) out.add(p.x() + " " + p.y() + " " + p.z());
+        return out;
+    }
+
+    private static Pos parse(String s) {
+        String[] v = s.split(" ");
+        return new Pos(Integer.parseInt(v[0]), Integer.parseInt(v[1]), Integer.parseInt(v[2]));
+    }
+
     /**
-     * Acerta registro e baús. 1) o que mudou nos baús desde a última vez (jogador pôs/tirou) entra no registro;
+     * Acerta registro e baús. 1) o que mudou nos baús desde a última vez (jogador ou súdito pôs/tirou) entra no registro;
      * 2) os baús passam a ter o que o registro diz (produção entra, consumo/obra sai). Retorna o resumo ou null se não deu.
+     * Quando o tesouro muda de lugar (armazém novo), os baús antigos são lidos uma última vez e esvaziados (sem duplicar).
      */
     public String sync(Kingdom k) {
         List<Pos> chests = chests(k);
-        if (chests.isEmpty()) {
-            k.treasurySeen = null;
-            return null;
-        }
-        for (Pos c : chests) if (!core.physical().isLoaded(c)) return null; // longe: o registro manda; acerta quando carregar
-        Map<ResourceType, Integer> phys = read(chests);
-        StringBuilder moved = new StringBuilder();
-        if (k.treasurySeen != null) {
-            for (ResourceType r : CANONICAL.keySet()) {
-                int delta = phys.getOrDefault(r, 0) - k.treasurySeen.getOrDefault(r, 0);
-                if (delta == 0) continue;
-                k.add(r, delta);
-                moved.append(delta > 0 ? "+" : "").append(delta).append(' ').append(r.display.toLowerCase()).append(", ");
+        if (chests.isEmpty()) return null; // sem baús: o registro é tudo (o que estava contado continua contado)
+        List<Pos> old = new ArrayList<>();
+        if (k.treasuryChests != null && !k.treasuryChests.equals(keys(chests)))
+            for (String key : k.treasuryChests) {
+                Pos p = parse(key);
+                if (!chests.contains(p) && core.physical().container(p) != null) old.add(p);
             }
-            if (moved.length() > 0)
-                core.bus().publish(core.tick(), EventType.TREASURY_CHANGED, GameEvent.Severity.INFO, k.id, null,
-                        "Baús do armazém de " + k.name + ": " + moved.substring(0, moved.length() - 2) + " (entrou/saiu no estoque).");
+        List<Pos> all = new ArrayList<>(chests);
+        all.addAll(old);
+        for (Pos c : all) if (!core.physical().isLoaded(c)) return null; // longe: o registro manda; acerta quando carregar
+        Map<ResourceType, Integer> phys = read(all);
+        Map<String, Integer> physGoods = readGoods(all);
+        Map<ResourceType, Integer> seen = k.treasurySeen == null ? Map.of() : k.treasurySeen;
+        Map<String, Integer> seenGoods = k.treasurySeenGoods == null ? Map.of() : k.treasurySeenGoods;
+        StringBuilder moved = new StringBuilder();
+        for (ResourceType r : CANONICAL.keySet()) {
+            int delta = phys.getOrDefault(r, 0) - seen.getOrDefault(r, 0);
+            if (delta == 0) continue;
+            k.add(r, delta);
+            moved.append(delta > 0 ? "+" : "").append(delta).append(' ').append(r.display.toLowerCase()).append(", ");
+        }
+        Set<String> items = new TreeSet<>(physGoods.keySet());
+        items.addAll(seenGoods.keySet());
+        for (String id : items) {
+            int delta = physGoods.getOrDefault(id, 0) - seenGoods.getOrDefault(id, 0);
+            if (delta == 0) continue;
+            k.goods.merge(id, delta, Integer::sum);
+            if (k.goods.getOrDefault(id, 0) <= 0) k.goods.remove(id);
+            moved.append(delta > 0 ? "+" : "").append(delta).append(' ').append(com.kingdomsai.core.skill.ItemNames.display(id)).append(", ");
+        }
+        if (moved.length() > 0)
+            core.bus().publish(core.tick(), EventType.TREASURY_CHANGED, GameEvent.Severity.INFO, k.id, null,
+                    "Baús do armazém de " + k.name + ": " + moved.substring(0, moved.length() - 2) + " (entrou/saiu no estoque).");
+        // tesouro mudou de lugar: o que estava nos baús antigos já está no registro — esvazia (sem duplicar)
+        for (Pos c : old) {
+            Map<String, Integer> inv = core.physical().container(c);
+            if (inv == null) continue;
+            for (var e : new ArrayList<>(inv.entrySet())) core.physical().take(null, c, e.getKey(), e.getValue());
         }
         int overflow = 0;
+        Map<ResourceType, Integer> now = read(chests);
         for (ResourceType r : CANONICAL.keySet()) {
             int target = (int) Math.floor(k.get(r) + 1e-6);
-            int have = phys.getOrDefault(r, 0);
+            int have = now.getOrDefault(r, 0);
             if (target > have) overflow += put(chests, CANONICAL.get(r), target - have);
             else if (target < have) remove(chests, r, have - target);
         }
+        Map<String, Integer> nowGoods = readGoods(chests);
+        Set<String> goodsIds = new TreeSet<>(k.goods.keySet());
+        goodsIds.addAll(nowGoods.keySet());
+        for (String id : goodsIds) {
+            int target = k.goods.getOrDefault(id, 0), have = nowGoods.getOrDefault(id, 0);
+            if (target > have) overflow += put(chests, id, target - have);
+            else if (target < have) {
+                int left = have - target;
+                for (Pos c : chests) {
+                    if (left <= 0) break;
+                    left -= core.physical().take(null, c, id, left);
+                }
+            }
+        }
         k.treasurySeen = read(chests);
+        k.treasurySeenGoods = readGoods(chests);
+        k.treasuryChests = keys(chests);
         k.treasuryOverflow = overflow;
         return moved.toString();
     }
@@ -157,10 +218,8 @@ public final class TreasurySystem {
         int left = n;
         for (Pos c : chests) {
             if (left <= 0) break;
-            int batch = left;
-            Map<String, Integer> rest = core.physical().put(null, c, new HashMap<>(Map.of(item, batch)));
-            int notFit = rest == null ? 0 : rest.getOrDefault(item, 0);
-            left = notFit;
+            Map<String, Integer> rest = core.physical().put(null, c, new HashMap<>(Map.of(item, left)));
+            left = rest == null ? 0 : rest.getOrDefault(item, 0);
         }
         return left;
     }

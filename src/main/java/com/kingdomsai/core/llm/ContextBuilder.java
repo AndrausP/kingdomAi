@@ -62,6 +62,10 @@ public final class ContextBuilder {
         sb.append("\nORDENS QUE SE VEEM: TRAIN (o NPC que recebeu a ordem escolhe quem treina, convoca se faltar, leva ao campo e treina em formação); ")
                 .append("MOVE(to, who) leva gente de verdade a um lugar e eles ficam lá; COLETA: JOB(kind=gather, item=pedra|terra|areia|carvao|ferro|madeira, count) ")
                 .append("ou JOB(kind=clear_trees, around=vila) — o súdito vai, quebra/derruba, replanta e guarda no armazém. ")
+                .append("TRABALHO CONTÍNUO do ofício: JOB(kind=labor, labor=wood|stone|ore|farm, item=ferro|carvao|cobre|ouro, quota) — \"produza madeira\", ")
+                .append("\"trabalhe na mina\", \"cuide da fazenda\": vai ao bosque/mina/fazenda, trabalha com a ferramenta DA MOCHILA, volta cheio, guarda, ")
+                .append("reabastece (ração, tochas, sementes, ferramenta reserva) e retorna; à noite dorme; quota = para ao guardar tanto. ")
+                .append("Cada súdito carrega um KIT (veja \"Kit\" em WORLD DATA): sem ferramenta no armazém o trabalho rende pouco — peça ao ferreiro. ")
                 .append("HIERARQUIA: o rei pode dar várias ordens numa frase; proponha uma ação para cada. \"Cuide da comida/moradia/defesa/madeira/pedra\" = GOAL(goal): ")
                 .append("o conselho avalia e executa os passos. Sem npc, o jogo passa cada tarefa a quem é competente (construtor livre, capitão, minerador).");
         sb.append("\nGUERRA E DOMÍNIO (é um jogo de estratégia medieval; o rei tem liberdade total e o jogo cobra as consequências): ")
@@ -108,6 +112,7 @@ public final class ContextBuilder {
         user.append("Agora: ").append(npc.activity.display).append(" (").append(sanitize(npc.currentTask)).append("). Fome ")
                 .append((int) npc.hunger).append("/100, energia ").append((int) npc.energy).append("/100.\n");
         if (!npc.bag.isEmpty()) user.append("Mochila: ").append(com.kingdomsai.core.skill.SkillSystem.summary(npc.bag)).append(".\n");
+        user.append("Kit: ").append(com.kingdomsai.core.skill.Kit.describe(npc)).append(".\n");
         if (playerKingdom != null) user.append(lookLine(playerKingdom.rulerPlayer));
         if (!npc.carrying.isEmpty()) user.append("Na mão: ").append(com.kingdomsai.core.work.ChainValidator.summary(npc.carrying)).append(".\n");
         user.append(com.kingdomsai.core.work.ChainValidator.canRead(npc) ? "Sabe ler" : "Não sabe ler")

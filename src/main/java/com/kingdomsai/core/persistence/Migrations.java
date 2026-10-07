@@ -30,7 +30,13 @@ public final class Migrations {
             // v3 → v4: armas individuais (Npc.equipped), treinos/deslocamentos, tesouro físico nos baús. Padrões no repair().
             root.addProperty("schemaVersion", 4);
         }
-        // if (v < 5) { ... }
+        if (v < 5) {
+            // v4 → v5: mochila real (ferramentas com desgaste, ração, equipamento vestido), bens do reino nos baús, trabalho contínuo.
+            // Moradores antigos recebem o kit do ofício e o reino o estoque inicial de bens ao abrir (KingdomsCore).
+            root.addProperty("kitsGranted", false);
+            root.addProperty("schemaVersion", 5);
+        }
+        // if (v < 6) { ... }
     }
 
     /** Garante campos não nulos após carregar (Gson ignora inicializadores para campos ausentes em alguns casos). */
@@ -65,6 +71,9 @@ public final class Migrations {
             if (j.gained == null) j.gained = new TreeMap<>();
             if (j.reason == null) j.reason = "";
             if (j.note == null) j.note = "";
+            if (j.labor == null) j.labor = "";
+            if (j.oreId == null) j.oreId = "";
+            if (j.continuous && (j.site == null || j.labor.isEmpty())) j.continuous = false; // trabalho contínuo sem local não retoma
             for (var t : j.tasks) if (t.blocks == null) t.blocks = new ArrayList<>();
             if (j.number > s.jobCounter) s.jobCounter = j.number;
         }
@@ -92,6 +101,7 @@ public final class Migrations {
             if (k.lastDelta == null) k.lastDelta = new EnumMap<>(ResourceType.class);
             if (k.laws == null) k.laws = new Kingdom.Laws();
             if (k.markers == null) k.markers = new EnumMap<>(com.kingdomsai.core.kingdom.Marker.class);
+            if (k.goods == null) k.goods = new TreeMap<>();
         }
         for (Npc n : s.npcs.values()) {
             if (n.relations == null) n.relations = new HashMap<>();
@@ -106,6 +116,9 @@ public final class Migrations {
             if (n.bag == null) n.bag = new TreeMap<>();
             if (n.freedom == null) n.freedom = com.kingdomsai.core.npc.Freedom.FREE;
             if (n.equipped == null) n.equipped = "";
+            if (n.wear == null) n.wear = new TreeMap<>();
+            if (n.gear == null) n.gear = new TreeMap<>();
+            if (n.skillXp == null) n.skillXp = new TreeMap<>();
             // quem estava numa campanha que sumiu do save volta para casa
             if (n.campaignId != null && (!s.campaigns.containsKey(n.campaignId) || !s.campaigns.get(n.campaignId).live())) n.campaignId = null;
         }

@@ -95,6 +95,11 @@ public final class KingdomsCore {
         this.treasury = new com.kingdomsai.core.economy.TreasurySystem(this);
         this.reports = new com.kingdomsai.core.event.AwayReport(this);
         wireReactions();
+        if (!state.kitsGranted) { // save antigo (v4 ou antes): moradores recebem o kit do ofício; reinos, as reservas
+            for (Npc n : allAlive()) if (n.bag.keySet().stream().noneMatch(com.kingdomsai.core.skill.Inventory::isTool)) com.kingdomsai.core.skill.Kit.grantStarter(n);
+            for (Kingdom k : state.kingdoms.values()) if (k.goods.isEmpty()) k.goods.putAll(com.kingdomsai.core.skill.Kit.starterGoods());
+            state.kitsGranted = true;
+        }
     }
 
     /** Reações entre sistemas via eventos (Military não mexe em Religion: publica, e quem quiser reage). */
@@ -211,6 +216,7 @@ public final class KingdomsCore {
         k.stock.put(ResourceType.IRON, 20.0);
         k.stock.put(ResourceType.GOLD, 500.0);
         k.stock.put(ResourceType.WEAPONS, 4.0);
+        k.goods.putAll(com.kingdomsai.core.skill.Kit.starterGoods()); // reservas no armazém: ferramentas, tochas, sementes, carvão
         state.kingdoms.put(k.id, k);
         state.territory.claimRadius(center, config.initialClaimRadius, k.id, state.tick);
 
@@ -266,6 +272,7 @@ public final class KingdomsCore {
             k.add(ResourceType.WEAPONS, -1);
             n.equipped = "iron_sword";
         }
+        com.kingdomsai.core.skill.Kit.grantStarter(n); // chega com as ferramentas e a ração do ofício
         state.npcs.put(n.id, n);
         // Relações iniciais com alguns vizinhos.
         List<Npc> others = citizens(k.id);

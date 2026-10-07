@@ -39,6 +39,7 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.IntValue MAX_NPCS_PER_KINGDOM;
     public static final ModConfigSpec.BooleanValue KEEP_ORDER_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_FORCED_CHUNKS;
+    public static final ModConfigSpec.IntValue MAX_BREAKS_PER_SECOND;
 
     // [construction]
     public static final ModConfigSpec.BooleanValue CONSTRUCTION_ENABLED;
@@ -95,6 +96,8 @@ public final class KingdomsConfig {
                 .define("keep_order_chunks_loaded", true);
         MAX_FORCED_CHUNKS = b.comment("Máximo de chunks mantidos carregados à distância (desempenho). Ordens além disso esperam na fila.")
                 .defineInRange("max_forced_chunks", 16, 0, 256);
+        MAX_BREAKS_PER_SECOND = b.comment("Máximo de blocos quebrados por segundo somando todos os súditos (lenhadores, mineiros, limpeza). Evita lag.")
+                .defineInRange("max_breaks_per_second", 40, 1, 1000);
         b.pop();
 
         b.push("construction");
@@ -149,6 +152,7 @@ public final class KingdomsConfig {
         KEYS.put("simulation.strategic_tick_seconds", STRATEGIC_TICK);
         KEYS.put("simulation.keep_order_chunks_loaded", KEEP_ORDER_CHUNKS);
         KEYS.put("simulation.max_forced_chunks", MAX_FORCED_CHUNKS);
+        KEYS.put("simulation.max_breaks_per_second", MAX_BREAKS_PER_SECOND);
         KEYS.put("construction.enabled", CONSTRUCTION_ENABLED);
         KEYS.put("construction.builder_blocks_per_second", BUILDER_BLOCKS_PER_SECOND);
         KEYS.put("construction.max_blocks_per_tick", MAX_BLOCKS_PER_TICK);
@@ -211,6 +215,7 @@ public final class KingdomsConfig {
         c.diplomacyEnabled = DIPLOMACY_ENABLED.get();
         c.keepOrderChunksLoaded = KEEP_ORDER_CHUNKS.get();
         c.maxForcedChunks = MAX_FORCED_CHUNKS.get();
+        c.maxBreaksPerSecond = MAX_BREAKS_PER_SECOND.get();
         return c;
     }
 

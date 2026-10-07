@@ -38,7 +38,6 @@ import java.util.function.Predicate;
 public final class JobPlanner {
     public static final int MAX_VOLUME = 343;
     public static final int MAX_SIDE = 32;
-    public static final int BAG_CAPACITY = 320;
     public static final int KING_RANGE = 64;
     public static final int MAX_TREE_LOGS = 96;
     public static final int MAX_LEAVES = 160;
@@ -58,6 +57,9 @@ public final class JobPlanner {
     private Map<String, Integer> bag;
     private Npc npc;
     private String lastProduct;
+    /** Planejando um lote de trabalho contínuo (sem guardar ao fim de cada lote; local já autorizado). */
+    private boolean laborMode;
+    private Map<String, String> laborSpec;
 
     private JobPlanner(KingdomsCore core, Kingdom k, UUID player) {
         this.core = core;
@@ -92,7 +94,7 @@ public final class JobPlanner {
         } else if (p.get("kind") != null) {
             out.add(new LinkedHashMap<>(p));
         }
-        if (out.isEmpty()) throw new IllegalArgumentException("JOB precisa de kind (break|dig|tunnel|clear|chop|clear_trees|gather|take|put|craft|give) ou tasks.");
+        if (out.isEmpty()) throw new IllegalArgumentException("JOB precisa de kind (break|dig|tunnel|clear|chop|clear_trees|gather|labor|take|put|craft|give) ou tasks.");
         if (out.size() > 8) throw new IllegalArgumentException("No máximo 8 tarefas por ordem.");
         for (Map<String, String> m : out)
             if (kindOf(m.get("kind")) == null) throw new IllegalArgumentException("Tarefa desconhecida: «" + m.get("kind") + "».");
@@ -110,6 +112,7 @@ public final class JobPlanner {
             case "clear", "limpar", "limpe", "aplainar" -> "clear";
             case "clear_trees", "desmatar", "desmate", "derrubar_arvores", "limpar_arvores", "arvores", "trees" -> "clear_trees";
             case "gather", "coletar", "colete", "coletem", "buscar", "busque", "juntar", "junte", "extrair", "minerar", "minere", "collect", "mine" -> "gather";
+            case "labor", "trabalhar", "trabalhe", "produzir", "produza", "produce", "work" -> "labor";
             case "chop", "cortar", "corte", "arvore", "tree" -> "chop";
             case "take", "pegar", "pegue", "retirar", "withdraw" -> "take";
             case "put", "guardar", "guarde", "depositar", "deposit", "store" -> "put";
@@ -139,6 +142,7 @@ public final class JobPlanner {
                 case "break", "dig", "tunnel", "clear" -> area(s);
                 case "chop" -> chop(s);
                 case "clear_trees" -> clearTrees(s);
+                case "labor" -> laborPlan(s);
                 case "gather" -> gather(s);
                 case "take" -> take(s);
                 case "put" -> put(s);
@@ -149,17 +153,14 @@ public final class JobPlanner {
             }
             if (errors.size() > before) break; // o resto depende desta tarefa
         }
-        int peak = bag.values().stream().mapToInt(Integer::intValue).sum();
-        if (errors.isEmpty() && peak > BAG_CAPACITY) {
-            if (storageChest() == null)
-                errors.add("Isso rende ~" + peak + " itens e a mochila leva " + BAG_CAPACITY + "; sem baú no armazém para esvaziar. Diminua a área.");
-            else warnings.add("Rende ~" + peak + " itens: " + npc.name + " vai esvaziar a mochila no baú do armazém no meio do trabalho.");
-        }
+        if (errors.isEmpty() && Inventory.slotsUsed(bag) > Inventory.SLOTS)
+            warnings.add("Rende mais do que cabe na mochila (" + Inventory.SLOTS + " espaços): " + npc.name + " vai ao armazém esvaziar no meio do trabalho.");
+        if (errors.isEmpty() && (!tasks.isEmpty() || laborSpec != null)) prepareKit();
         return done();
     }
 
     private Plan done() {
-        if (!errors.isEmpty() || tasks.isEmpty()) {
+        if (!errors.isEmpty() || tasks.isEmpty() && laborSpec == null) {
             if (errors.isEmpty()) errors.add("Nada a fazer.");
             return new Plan(errors, warnings, List.of(), null);
         }
@@ -168,11 +169,25 @@ public final class JobPlanner {
         job.npcId = npc.id;
         job.orderedBy = player;
         job.tasks.addAll(tasks);
-        PhysicalJob.Task main = tasks.stream().filter(t -> !t.auto).findFirst().orElse(tasks.get(0));
-        job.name = Text.truncate(main.label, 48);
+        if (laborSpec != null) {
+            job.continuous = true;
+            job.labor = laborSpec.get("labor");
+            job.site = new Pos(num(laborSpec.get("x")), num(laborSpec.get("y")), num(laborSpec.get("z")));
+            job.radius = num(laborSpec.get("radius"));
+            job.quota = num(laborSpec.getOrDefault("quota", "0"));
+            job.oreId = laborSpec.getOrDefault("ore", "");
+            job.tunnelDir = num(laborSpec.getOrDefault("dir", "0"));
+            job.tunnelLength = num(laborSpec.getOrDefault("tunnel", "0"));
+            job.name = Text.truncate(laborSpec.get("name"), 48);
+        } else {
+            PhysicalJob.Task main = tasks.stream().filter(t -> !t.auto).findFirst().orElse(tasks.get(0));
+            job.name = Text.truncate(main.label, 48);
+        }
         List<String> lines = new ArrayList<>();
         for (int i = 0; i < tasks.size(); i++)
             lines.add((i + 1) + ". " + tasks.get(i).label + (tasks.get(i).auto ? " (planejado)" : ""));
+        if (job.continuous)
+            lines.add("↻ " + job.name + " — repete: volta ao armazém quando a mochila enche, troca ferramenta gasta, come da ração, dorme à noite.");
         return new Plan(errors, warnings, lines, job);
     }
 
@@ -188,6 +203,10 @@ public final class JobPlanner {
         Profession want = switch (firstKind) {
             case "break", "dig", "tunnel", "clear" -> Profession.MINER;
             case "chop", "clear_trees" -> Profession.LUMBERJACK;
+            case "labor" -> {
+                String l = laborOf(specs.get(0));
+                yield "wood".equals(l) ? Profession.LUMBERJACK : "farm".equals(l) ? Profession.FARMER : Profession.MINER;
+            }
             case "gather" -> {
                 String it = Text.norm(specs.get(0).getOrDefault("item", "pedra"));
                 yield it.matches("madeira|lenha|troncos?") ? Profession.LUMBERJACK : it.matches("terra|areia|cascalho|argila") ? Profession.PEASANT : Profession.MINER;
@@ -216,19 +235,59 @@ public final class JobPlanner {
     }
 
     /** Ferramentas que o NPC tem: as do ofício + as que estiverem na mochila. */
+    /** Ferramentas que o NPC TEM de verdade (na mochila; quebram com o uso e são repostas no armazém). */
     public static Set<String> tools(Npc n) {
         Set<String> t = new HashSet<>();
-        switch (n.profession) {
-            case MINER -> t.addAll(List.of("pickaxe", "shovel"));
-            case LUMBERJACK -> t.add("axe");
-            case BUILDER -> t.addAll(List.of("pickaxe", "axe", "shovel"));
-            case FARMER -> t.addAll(List.of("hoe", "shovel"));
-            case BLACKSMITH -> t.add("pickaxe");
-            default -> {
-            }
+        for (var e : n.bag.entrySet()) {
+            String type = Inventory.toolType(e.getKey());
+            if (type != null && e.getValue() > 0) t.add(type);
         }
-        for (String id : n.bag.keySet())
-            for (String tool : new String[]{"pickaxe", "axe", "shovel", "hoe"}) if (id.endsWith("_" + tool)) t.add(tool);
+        return t;
+    }
+
+    /** Ferramentas com que ele vai trabalhar: as da mochila + as que vai buscar no armazém antes de começar. */
+    private Set<String> usable() {
+        Set<String> t = tools(npc);
+        for (var e : k.goods.entrySet()) {
+            String type = Inventory.toolType(e.getKey());
+            if (type != null && e.getValue() > 0) t.add(type);
+        }
+        return t;
+    }
+
+    /** O reino tem uma ferramenta deste tipo guardada? */
+    public static boolean kingdomHasTool(Kingdom k, String type) {
+        for (var e : k.goods.entrySet()) if (e.getValue() > 0 && type.equals(Inventory.toolType(e.getKey()))) return true;
+        return false;
+    }
+
+    /** Onde fica o "armazém" para ir guardar/buscar: baú do armazém (ou do Salão Real); sem baús, a praça da vila. */
+    public static Pos storagePoint(KingdomsCore core, Kingdom k) {
+        List<Pos> treasury = core.treasury().chests(k);
+        if (!treasury.isEmpty()) return treasury.get(0);
+        Building b = ChainValidator.findBuilding(core, k, Place.STORAGE, true);
+        if (b != null && b.origin != null && b.origin.y() != Integer.MIN_VALUE) return b.entrance();
+        return k.marker(com.kingdomsai.core.kingdom.Marker.GATHER, k.center);
+    }
+
+    public static PhysicalJob.Task resupplyTask(Pos at, Collection<String> toolTypes) {
+        PhysicalJob.Task t = new PhysicalJob.Task();
+        t.kind = PhysicalJob.Kind.RESUPPLY;
+        t.at = at;
+        t.item = String.join(",", toolTypes);
+        t.auto = true;
+        List<String> names = new ArrayList<>();
+        for (String type : toolTypes) names.add(toolName(type));
+        t.label = "passar no armazém: " + (names.isEmpty() ? "" : String.join(", ", names) + ", ") + "ração e o kit do ofício";
+        return t;
+    }
+
+    public static PhysicalJob.Task storeTask(Pos at) {
+        PhysicalJob.Task t = new PhysicalJob.Task();
+        t.kind = PhysicalJob.Kind.STORE;
+        t.at = at;
+        t.auto = true;
+        t.label = "guardar no armazém o que juntou";
         return t;
     }
 
@@ -281,7 +340,7 @@ public final class JobPlanner {
             errors.add("Essa área não está carregada. Chegue mais perto.");
             return;
         }
-        Set<String> tools = tools(npc);
+        Set<String> tools = usable();
         int prot = 0, foreign = 0, chests = 0, fluid = 0, unbreakable = 0, noDrop = 0, claimed = 0;
         String protName = null, foreignName = null, missingTool = null;
         boolean stairs = kind.equals("dig") && h >= 3 && Math.max(w, d) >= 2;
@@ -445,7 +504,7 @@ public final class JobPlanner {
         leafQueue.removeIf(p -> p.y() - base.y() > 12 || protectedBy(p) != null);
         leafQueue.sort(Comparator.comparingInt(Pos::y));
         String logId = port.block(start).id();
-        Set<String> tools = tools(npc);
+        Set<String> tools = usable();
         if (!tools.contains("axe")) warnings.add(npc.name + " não tem machado: vai demorar mais.");
         bag.merge(port.block(start).drop() == null ? logId : port.block(start).drop(), queue.size(), Integer::sum);
         if (high > 0) warnings.add(high + " tora(s) altas demais ficam (mais de 12 blocos acima do chão).");
@@ -705,7 +764,7 @@ public final class JobPlanner {
         if (!fromMarker && !nearKing(c)) return; // mina marcada é terra do reino: vale mesmo com o rei longe
         int radius = Math.max(4, Math.min(24, num(s.getOrDefault("radius", "16"))));
         int count = Math.max(1, Math.min(128, num(s.getOrDefault("count", "32"))));
-        Set<String> tools = tools(npc);
+        Set<String> tools = usable();
         List<Pos> found = new ArrayList<>();
         int prot = 0, foreign = 0;
         for (int dx = -radius; dx <= radius; dx++)
@@ -763,13 +822,346 @@ public final class JobPlanner {
 
     /** No fim da coleta, guarda tudo no armazém (ou nos baús do Salão): é lá que o estoque do reino mora. */
     private void deposit() {
-        if (bag.isEmpty()) return;
-        if (storageChest() == null) {
-            warnings.add("Sem armazém nem baú no Salão Real: o que juntar fica na mochila de " + npc.name + " (/k bag " + npc.name + ").");
+        if (bag.isEmpty() || laborMode) return;
+        if (storageChest() == null)
+            warnings.add("Sem armazém nem baú no Salão Real: guarda na praça da vila (só no registro do reino).");
+        tasks.add(storeTask(storagePoint(core, k)));
+    }
+
+    // ------------------------------------------------------------------ kit e trabalho contínuo
+
+    /** Antes de começar: tem a ferramenta do serviço, ração e espaço? Se não, passa no armazém primeiro. */
+    private void prepareKit() {
+        Set<String> need = new TreeSet<>();
+        for (PhysicalJob.Task t : tasks)
+            switch (t.kind) {
+                case CHOP -> need.add("axe");
+                case FARM -> need.add("hoe");
+                case BREAK -> {
+                    for (int i = 0; i < Math.min(4096, t.blocks.size()); i++) {
+                        String tool = port.block(t.blocks.get(i)).tool();
+                        if (tool != null) need.add(tool);
+                    }
+                }
+                default -> {
+                }
+            }
+        if (laborSpec != null) need.add(switch (laborSpec.get("labor")) {
+            case "wood" -> "axe";
+            case "farm" -> "hoe";
+            default -> "pickaxe";
+        });
+        Set<String> have = tools(npc);
+        List<String> fetch = new ArrayList<>();
+        for (String type : need) {
+            if (have.contains(type)) continue;
+            if (kingdomHasTool(k, type)) fetch.add(type);
+            else if (warnings.stream().noneMatch(w -> w.contains("não tem " + toolName(type)))) warnings.add(npc.name + " não tem " + toolName(type) + " e não há no armazém: vai devagar"
+                    + (type.equals("pickaxe") ? " e pedra/minério não rendem nada" : "") + ". O ferreiro repõe a reserva.");
+        }
+        boolean kitLow = Kit.wantsResupply(npc);
+        boolean crowded = Inventory.freeSlots(npc) < 6;
+        if (fetch.isEmpty() && !kitLow && !crowded) return;
+        Pos store = storagePoint(core, k);
+        List<PhysicalJob.Task> pre = new ArrayList<>();
+        if (crowded) pre.add(storeTask(store));
+        pre.add(resupplyTask(store, fetch));
+        tasks.addAll(0, pre);
+    }
+
+    static String laborOf(Map<String, String> s) {
+        String w = Text.norm(s.getOrDefault("labor", s.getOrDefault("item", "madeira")));
+        if (w.matches("wood|madeira|lenha|toras?|troncos?|floresta|bosque|lenhador")) return "wood";
+        if (w.matches("stone|pedra|pedras|rocha|pedregulho|pedreira")) return "stone";
+        if (w.matches("ore|ferro|carvao|cobre|ouro|minerio|minerios|mina|minerar")) return "ore";
+        if (w.matches("farm|fazenda|lavoura|trigo|plantacao|colheita|comida|plantar|colher")) return "farm";
+        return null;
+    }
+
+    /** "Produza madeira", "trabalhe na mina", "cuide da fazenda": trabalho que se repete, num local do reino. */
+    private void laborPlan(Map<String, String> s) {
+        String labor = laborOf(s);
+        if (labor == null) {
+            errors.add("Que trabalho? madeira, pedra, minério (ferro, carvão, cobre) ou fazenda.");
             return;
         }
-        put(new LinkedHashMap<>(Map.of("kind", "put", "to", "storage")));
-        if (!tasks.isEmpty()) tasks.get(tasks.size() - 1).auto = true;
+        String w = Text.norm(s.getOrDefault("labor", "") + " " + s.getOrDefault("item", ""));
+        String ore = !labor.equals("ore") ? "" : w.contains("carvao") ? "minecraft:coal_ore" : w.contains("cobre") ? "minecraft:copper_ore"
+                : w.contains("ouro") ? "minecraft:gold_ore" : "minecraft:iron_ore";
+        Pos site = null;
+        int radius = Math.max(8, Math.min(32, num(s.getOrDefault("radius", "16"))));
+        if (s.get("x") != null && s.get("z") != null) site = gatherCenter(s, null);
+        else switch (labor) {
+            case "wood" -> site = k.markers.containsKey(com.kingdomsai.core.kingdom.Marker.FOREST) ? k.markers.get(com.kingdomsai.core.kingdom.Marker.FOREST) : gatherCenter(s, null);
+            case "stone", "ore" -> site = k.markers.containsKey(com.kingdomsai.core.kingdom.Marker.MINE) ? k.markers.get(com.kingdomsai.core.kingdom.Marker.MINE) : gatherCenter(s, null);
+            default -> {
+                Building farm = nearestFarm(core, k, core.playerPos(player) != null ? core.playerPos(player) : k.center);
+                if (farm == null) {
+                    errors.add("Não há fazenda pronta para cuidar. Construa uma (\"construa uma fazenda\").");
+                    return;
+                }
+                site = farm.centerPos();
+                radius = Math.max(farm.blueprint().sizeX(), farm.blueprint().sizeZ());
+            }
+        }
+        if (site == null) {
+            errors.add(labor.equals("wood") ? "Onde? Marque o bosque com a Bandeira (\"marque aqui como bosque\") ou mire nas árvores."
+                    : "Onde? Marque a mina com a Bandeira (\"marque aqui como mina\") ou mire no lugar.");
+            return;
+        }
+        Kingdom owner = core.kingdom(core.state().territory.ownerAt(site));
+        if (owner != k) {
+            errors.add("Esse lugar " + (owner == null ? "não é território do reino" : "é de " + owner.name) + ": trabalho contínuo só em terra do reino (reivindique antes).");
+            return;
+        }
+        int quota = num(s.getOrDefault("quota", s.getOrDefault("count", "0")));
+        String what = switch (labor) {
+            case "wood" -> "produzir madeira";
+            case "stone" -> "tirar pedra";
+            case "ore" -> "minerar " + ItemNames.display(ore).replace("minério de ", "");
+            default -> "cuidar da fazenda";
+        };
+        laborSpec = new LinkedHashMap<>(Map.of("labor", labor, "x", String.valueOf(site.x()), "y", String.valueOf(site.y()), "z", String.valueOf(site.z()),
+                "radius", String.valueOf(radius), "quota", String.valueOf(Math.max(0, quota)), "ore", ore,
+                "name", what + " em " + site.x() + " " + site.z() + (quota > 0 ? " (meta " + quota + ")" : " (sem fim)")));
+        // primeiro lote já planejado (o resto o SkillSystem planeja conforme trabalha)
+        PhysicalJob probe = new PhysicalJob();
+        probe.labor = labor;
+        probe.site = site;
+        probe.radius = radius;
+        probe.oreId = ore;
+        laborMode = true;
+        int before = errors.size();
+        batch(probe);
+        if (errors.size() > before) { // nada disponível agora: começa esperando (árvores crescem, plantação amadurece)
+            warnings.add(errors.get(before) + " " + npc.name + " fica no local e tenta de novo.");
+            errors.subList(before, errors.size()).clear();
+        }
+        laborSpec.put("dir", String.valueOf(probe.tunnelDir));
+        laborSpec.put("tunnel", String.valueOf(probe.tunnelLength));
+    }
+
+    /** Próximo lote de um trabalho contínuo (chamado pelo SkillSystem quando o anterior acaba). */
+    public static List<PhysicalJob.Task> nextBatch(KingdomsCore core, Kingdom k, PhysicalJob job, Npc n) {
+        JobPlanner jp = new JobPlanner(core, k, job.orderedBy);
+        jp.npc = n;
+        jp.bag = new TreeMap<>(n.bag);
+        jp.laborMode = true;
+        jp.batch(job);
+        return jp.errors.isEmpty() ? jp.tasks : List.of();
+    }
+
+    /** Motivo de não haver lote agora (para o rei saber). */
+    public static String idleReason(KingdomsCore core, Kingdom k, PhysicalJob job, Npc n) {
+        JobPlanner jp = new JobPlanner(core, k, job.orderedBy);
+        jp.npc = n;
+        jp.bag = new TreeMap<>(n.bag);
+        jp.laborMode = true;
+        jp.batch(job);
+        return jp.errors.isEmpty() ? "" : jp.errors.get(0);
+    }
+
+    private void batch(PhysicalJob job) {
+        switch (job.labor) {
+            case "wood" -> nextTree(job);
+            case "stone" -> gather(new LinkedHashMap<>(Map.of("kind", "gather", "item", "pedra", "count", "16", "radius", String.valueOf(job.radius),
+                    "x", String.valueOf(job.site.x()), "y", String.valueOf(job.site.y()), "z", String.valueOf(job.site.z()))));
+            case "ore" -> nextOre(job);
+            case "farm" -> nextPlots(job);
+            default -> errors.add("Trabalho desconhecido: " + job.labor);
+        }
+    }
+
+    /** Lenhador: a árvore permitida mais perto dele no bosque (tronco + folhas; replanta a muda). */
+    private void nextTree(PhysicalJob job) {
+        List<Pos> bases = new ArrayList<>();
+        Pos c = job.site;
+        for (int dx = -job.radius; dx <= job.radius; dx++)
+            for (int dz = -job.radius; dz <= job.radius; dz++) {
+                if (dx * dx + dz * dz > job.radius * job.radius) continue;
+                for (int dy = -6; dy <= 10; dy++) {
+                    Pos p = c.offset(dx, dy, dz);
+                    if (port.block(p).log() && !port.block(p.offset(0, -1, 0)).log()) {
+                        bases.add(p);
+                        break;
+                    }
+                }
+            }
+        Pos from = npc.pos != null ? npc.pos : c;
+        bases.sort(Comparator.comparingDouble(p -> p.distSq(from)));
+        for (Pos b : bases) {
+            int errBefore = errors.size(), tasksBefore = tasks.size();
+            Map<String, Integer> bagBefore = new TreeMap<>(bag);
+            chop(new LinkedHashMap<>(Map.of("kind", "chop", "x", String.valueOf(b.x()), "y", String.valueOf(b.y()), "z", String.valueOf(b.z()))));
+            if (errors.size() == errBefore) return; // uma árvore por lote
+            errors.subList(errBefore, errors.size()).clear();
+            while (tasks.size() > tasksBefore) tasks.remove(tasks.size() - 1);
+            bag.clear();
+            bag.putAll(bagBefore);
+        }
+        errors.add("Não há árvore que eu possa derrubar no bosque agora (as mudas ainda estão crescendo?).");
+    }
+
+    private static boolean isOre(String id) {
+        return id.endsWith("_ore") || id.equals("minecraft:ancient_debris");
+    }
+
+    /** Minerador: minério à vista perto da mina; senão abre galeria controlada (1×2, de cima para baixo, tocha a cada 8). */
+    private void nextOre(PhysicalJob job) {
+        List<Pos> ores = new ArrayList<>();
+        for (int dx = -job.radius; dx <= job.radius; dx++)
+            for (int dz = -job.radius; dz <= job.radius; dz++)
+                for (int dy = -6; dy <= 6; dy++) {
+                    Pos p = job.site.offset(dx, dy, dz);
+                    BlockInfo b = port.block(p);
+                    if (!isOre(b.id()) || !exposed(p) || b.nearFluid() || protectedBy(p) != null || foreignOwner(p) != null || !port.mayBreak(player, p)) continue;
+                    ores.add(p);
+                }
+        if (!ores.isEmpty()) {
+            Pos from = npc.pos != null ? npc.pos : job.site;
+            ores.sort(Comparator.comparingDouble(p -> p.distSq(from)));
+            List<Pos> q = new ArrayList<>(ores.subList(0, Math.min(8, ores.size())));
+            for (Pos p : q) if (port.block(p).drop() != null) bag.merge(port.block(p).drop(), 1, Integer::sum);
+            PhysicalJob.Task t = new PhysicalJob.Task();
+            t.kind = PhysicalJob.Kind.BREAK;
+            t.blocks = q;
+            t.total = q.size();
+            t.label = "tirar " + q.size() + " minério(s) à vista perto da mina";
+            tasks.add(t);
+            return;
+        }
+        tunnel(job);
+    }
+
+    private void tunnel(PhysicalJob job) {
+        int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+        for (int attempt = 0; attempt < 4; attempt++) {
+            int[] d = dirs[Math.floorMod(job.tunnelDir, 4)];
+            List<Pos> queue = new ArrayList<>(), ores = new ArrayList<>();
+            boolean blocked = false;
+            Pos torchAt = null;
+            int advanced = 0;
+            for (int i = job.tunnelLength; i < job.tunnelLength + 8 && !blocked; i++) {
+                Pos floor = job.site.offset(d[0] * i, 0, d[1] * i);
+                List<Pos> cut = new ArrayList<>();
+                for (Pos p : List.of(floor.offset(0, 1, 0), floor)) { // de cima para baixo
+                    BlockInfo b = port.block(p);
+                    if (b.fluid() || b.nearFluid() || port.block(p.offset(0, 1, 0)).fluid()) {
+                        blocked = true; // água/lava à frente: não abre (evita inundar a mina)
+                        break;
+                    }
+                    if (b.air()) continue;
+                    if (b.blockEntity() || !b.breakable() || b.hardness() < 0 || protectedBy(p) != null || foreignOwner(p) != null || !port.mayBreak(player, p)) {
+                        blocked = true;
+                        break;
+                    }
+                    cut.add(p);
+                }
+                if (blocked) break;
+                queue.addAll(cut);
+                advanced++;
+                for (Pos side : List.of(floor.offset(d[1], 0, d[0]), floor.offset(-d[1], 0, -d[0]), floor.offset(d[1], 1, d[0]), floor.offset(-d[1], 1, -d[0]),
+                        floor.offset(0, 2, 0), floor.offset(0, -1, 0)))
+                    if (isOre(port.block(side).id()) && !ores.contains(side) && protectedBy(side) == null && foreignOwner(side) == null && !port.block(side).nearFluid())
+                        ores.add(side);
+                if ((i + 1) % 8 == 0) torchAt = floor;
+            }
+            if (queue.isEmpty() && ores.isEmpty()) {
+                if (blocked || advanced == 0) {
+                    job.tunnelDir++; // água/lava/construção à frente: vira
+                    job.tunnelLength = 0;
+                    continue;
+                }
+                job.tunnelLength += advanced; // trecho já aberto: segue em frente
+                continue;
+            }
+            Set<String> tl = usable();
+            for (Pos p : queue) {
+                BlockInfo b = port.block(p);
+                if (b.drop() != null && (!b.needsTool() || b.tool() == null || tl.contains(b.tool()))) bag.merge(b.drop(), 1, Integer::sum);
+            }
+            for (Pos p : ores) {
+                BlockInfo b = port.block(p);
+                if (b.drop() != null && (!b.needsTool() || tl.contains(b.tool()))) bag.merge(b.drop(), 1, Integer::sum);
+            }
+            PhysicalJob.Task t = new PhysicalJob.Task();
+            t.kind = PhysicalJob.Kind.BREAK;
+            t.blocks = new ArrayList<>(queue);
+            t.blocks.addAll(ores);
+            t.total = t.blocks.size();
+            t.label = "abrir galeria (" + advanced + " blocos" + (ores.isEmpty() ? "" : ", " + ores.size() + " minério(s) na parede") + ")";
+            tasks.add(t);
+            job.tunnelLength += advanced;
+            if (blocked) {
+                job.tunnelDir++;
+                job.tunnelLength = 0;
+            }
+            if (torchAt != null) {
+                PhysicalJob.Task torch = new PhysicalJob.Task();
+                torch.kind = PhysicalJob.Kind.PLANT;
+                torch.at = torchAt;
+                torch.block = "minecraft:torch";
+                torch.auto = true;
+                torch.label = "pôr tocha na galeria (escuro)";
+                tasks.add(torch);
+            }
+            return;
+        }
+        errors.add("A mina está bloqueada em todas as direções (água/lava, construções ou terra de outro reino).");
+    }
+
+    public static Building nearestFarm(KingdomsCore core, Kingdom k, Pos near) {
+        Building best = null;
+        for (Building b : core.buildings(k.id)) {
+            if (!b.isComplete() || b.origin == null || b.origin.y() == Integer.MIN_VALUE) continue;
+            if (b.blueprint().placements().stream().noneMatch(p -> p.material() == com.kingdomsai.core.construction.Material.CROP)) continue;
+            if (best == null || b.centerPos().distSq(near) < best.centerPos().distSq(near)) best = b;
+        }
+        return best;
+    }
+
+    /** Fazendeiro: canteiros que pedem trabalho (maduro → colher e replantar; vazio → plantar; terra → arar e plantar). */
+    private void nextPlots(PhysicalJob job) {
+        Building farm = nearestFarm(core, k, job.site);
+        if (farm == null) {
+            errors.add("A fazenda sumiu.");
+            return;
+        }
+        List<Pos> need = new ArrayList<>();
+        int growing = 0, noSeed = 0;
+        // canteiro vazio só entra se houver semente (na mochila, no armazém ou da colheita deste lote)
+        int seeds = bag.getOrDefault("minecraft:wheat_seeds", 0) + Kit.stock(k, "minecraft:wheat_seeds");
+        for (var pl : farm.blueprint().placements()) {
+            if (pl.material() != com.kingdomsai.core.construction.Material.CROP) continue;
+            Pos p = farm.origin.offset(pl.x(), pl.y(), pl.z());
+            if (foreignOwner(p) != null || !port.mayBreak(player, p)) continue;
+            int g = port.growth(p);
+            BlockInfo b = port.block(p), below = port.block(p.offset(0, -1, 0));
+            if (g >= 100) {
+                need.add(p);
+                seeds++; // o trigo maduro devolve a semente para replantar
+            } else if (g >= 0) growing++;
+            else if (b.air() && (below.id().endsWith("farmland") || below.id().matches(".*:(dirt|grass_block|coarse_dirt)"))) {
+                if (seeds > 0) {
+                    need.add(p);
+                    seeds--;
+                } else noSeed++;
+            }
+        }
+        if (need.isEmpty()) {
+            errors.add(noSeed > 0 ? "Sem sementes (nem no armazém) para " + noSeed + " canteiro(s) vazio(s): espero a colheita devolver sementes."
+                    : growing > 0 ? "A plantação ainda está crescendo (" + growing + " canteiros)." : "Nenhum canteiro precisa de trabalho agora.");
+            return;
+        }
+        Pos from = npc.pos != null ? npc.pos : job.site;
+        need.sort(Comparator.comparingDouble(p -> p.distSq(from)));
+        PhysicalJob.Task t = new PhysicalJob.Task();
+        t.kind = PhysicalJob.Kind.FARM;
+        t.blocks = need;
+        t.total = need.size();
+        t.block = "minecraft:wheat";
+        t.label = "cuidar de " + need.size() + " canteiro(s) da fazenda (colher, arar, plantar)";
+        tasks.add(t);
     }
 
     // ------------------------------------------------------------------ fabricar
@@ -959,6 +1351,7 @@ public final class JobPlanner {
     // ------------------------------------------------------------------ regras de proteção
 
     private boolean nearKing(Pos p) {
+        if (laborMode) return true; // trabalho contínuo: o local já foi validado como terra do reino
         Pos king = core.playerPos(player);
         if (king != null && king.distXZ(p) > KING_RANGE) {
             errors.add("Fica a " + (int) king.distXZ(p) + " blocos de Vossa Majestade: trabalho com as mãos só onde o rei pode ver (até "

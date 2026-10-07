@@ -37,6 +37,27 @@ Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, 
 - **Coleta de verdade**: *"limpe as árvores da região"* (várias árvores, replanta as mudas), *"vá coletar pedra"* / *"minere 40 pedras"* / *"busque areia"* — o súdito vai à mina marcada (ou onde você mira), quebra só o que pode (validação de território, construções, claims, água) e **guarda no armazém**.
 - **Hierarquia**: *"conselho, construam um mercado, treinem a tropa e colete pedra"* — o conselheiro divide em tarefas, passa cada uma a quem é competente e diz quem ficou com o quê. *"Cuide da comida"* (ou moradia, defesa, madeira, pedra, território): ele avalia o reino e executa os passos em seu nome.
 
+### Mochila, kit do ofício e trabalho contínuo (o NPC é só o corpo; o estado mora no Core)
+
+Cada súdito tem **mochila de verdade** (27 espaços, pilhas de 64, ferramenta ocupa 1) e um **kit do ofício**. Chegam com o básico (ferramentas de pedra); o armazém repõe o resto e o ferreiro forja a reserva de ferramentas.
+
+| Ofício | Carrega |
+|---|---|
+| Fazendeiro | enxada, sementes, balde, comida |
+| Lenhador | machado + machado reserva, mudas, comida |
+| Minerador | picareta + picareta reserva, tochas, comida |
+| Construtor | picareta, machado, blocos, comida |
+| Ferreiro | materiais (ferro), carvão, combustível, ferramenta |
+| Guarda | espada (arsenal), escudo, armadura, elmo, comida |
+| Soldado | arma (arsenal), armadura, elmo, escudo, suprimentos |
+
+- **Trabalho contínuo pelo chat**: *"produza madeira"*, *"trabalhe na mina de ferro"*, *"cuide da fazenda"*, *"colha o trigo"*, *"produza 64 toras"* (meta: para quando guardar tanto). Ele confere o kit (sem tocha/ração/picareta passa no armazém antes), vai ao bosque/mina/fazenda, trabalha, **volta quando a mochila enche** (ou falta comida/ferramenta), guarda, reabastece e **retorna ao mesmo ponto**. À noite guarda o que juntou e dorme; de manhã volta.
+- **Lenhador**: corta só árvores de verdade (tronco + folhas) do bosque, recolhe toras e mudas, **replanta**, troca o machado gasto pela reserva. **Minerador**: abre galeria 1×2 controlada a partir da mina marcada (para diante de água/lava/construção e vira), tira o minério da parede, **põe tocha a cada 8 blocos**; o ferro bruto vai ao armazém e o ferreiro **funde com carvão**. **Fazendeiro**: ara a terra com a enxada, busca sementes no armazém, planta, espera crescer, colhe só o maduro e replanta; o trigo vira comida do reino.
+- **Ferramentas gastam** (madeira 59, pedra 131, ferro 250 usos; ferro corta mais rápido que pedra). Quebrou: pega a reserva; sem reserva, volta ao armazém; sem nenhuma, segue na mão (devagar, e pedra/minério não rendem). **Prática**: quem trabalha mais fica mais rápido.
+- **Longe da vista** (área descarregada) o trabalho continua **simulado** no Core com as mesmas regras (rende no ritmo da ferramenta, gasta, come, leva ao armazém) e o mundo não muda até alguém chegar; aí ele volta ao trabalho de verdade.
+- **Nenhum bloco é quebrado direto pela IA**: tudo vira ordem validada — território do reino, construções e claims protegidos, ferramenta, distância (alcance de 5 blocos), etapa da tarefa e um **limite global de blocos por segundo** (`max_breaks_per_second`, padrão 40).
+- `/k bag <nome>`: mochila, kit (ferramenta e % de vida, reserva, ração, espaços) e o que falta para trabalhar.
+
 ### Guerra e domínio (liberdade total, o jogo cobra)
 
 - **Exército não custa ouro, custa comida.** *"Convoquem 5 soldados"* ou, para alguém competente, *"Capitão, monte um exército"* — sem número, o general/capitão decide quantos (olha a maior ameaça) e quem (camponeses primeiro, os mais corajosos). Soldado come 2 por ciclo, 3 em campanha, guarda 1,5 (civil 1). Sem limite de tamanho: o limite é a comida.

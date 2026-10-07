@@ -332,6 +332,8 @@ public final class ActionSystem {
                 k.add(ResourceType.WEAPONS, -1);
                 n.equipped = "iron_sword";
             }
+            com.kingdomsai.core.skill.Kit.deposit(k, n);  // ferramentas do ofício antigo voltam ao armazém
+            com.kingdomsai.core.skill.Kit.resupply(k, n); // escudo, armadura e suprimentos do arsenal
             out.add(n);
         }
         return out;
@@ -460,7 +462,13 @@ public final class ActionSystem {
         n.remember(core.tick(), "Passei a trabalhar como " + to.display.toLowerCase() + " (antes: " + before.display.toLowerCase() + ").", 35, null, "trabalho");
         core.bus().publish(core.tick(), EventType.NPC_PROFESSION_CHANGED, GameEvent.Severity.INFO, k.id, n.id,
                 n.name + ": " + before.display + " → " + to.display + ".");
-        return ActionResult.ok(n.name + " agora é " + to.display.toLowerCase() + ".");
+        // troca de ofício = troca de kit: devolve as ferramentas do antigo e pega as do novo no armazém
+        com.kingdomsai.core.skill.Kit.deposit(k, n);
+        var trip = com.kingdomsai.core.skill.Kit.resupply(k, n);
+        core.treasury().sync(k);
+        return ActionResult.ok(n.name + " agora é " + to.display.toLowerCase() + "."
+                + (trip.nothing() ? "" : " Pegou no armazém: " + com.kingdomsai.core.skill.SkillSystem.summary(trip.moved()) + ".")
+                + (trip.lacking().isEmpty() ? "" : " ⚠ Falta no armazém: " + String.join(", ", trip.lacking()) + " — o ferreiro precisa fazer."));
     }
 
     private ActionResult promote(Kingdom k, Npc n, Office office) {

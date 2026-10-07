@@ -64,6 +64,12 @@ public final class Npc {
     public Freedom freedom = Freedom.FREE;
     /** Campanha militar/colonização de que participa (v3). */
     public UUID campaignId;
+    /** Desgaste da ferramenta em uso de cada tipo de item ("minecraft:iron_axe" → 37 usos) (v5). */
+    public Map<String, Integer> wear = new TreeMap<>();
+    /** Equipamento vestido: head/chest/legs/feet/offhand → item (v5). */
+    public Map<String, String> gear = new TreeMap<>();
+    /** Experiência por habilidade (lenhar, minerar, plantar, colher, construir): sobe trabalhando e acelera o trabalho (v5). */
+    public Map<String, Integer> skillXp = new TreeMap<>();
     /** Arma do arsenal do reino na mão ("iron_sword") ou "" (desarmado: espada de madeira) (v4). */
     public String equipped = "";
     /** Reino de onde veio (cativos de guerra) — para devolvê-los se forem libertados (v3). */
@@ -93,6 +99,11 @@ public final class Npc {
         if (freedom == Freedom.ENSLAVED) return profession.display + ", escravizado";
         if (office != Office.NONE) return office.display;
         return profession.display;
+    }
+
+    /** Nível da habilidade (0..10): raiz da experiência. */
+    public int skillLevel(String skill) {
+        return Math.min(10, (int) Math.sqrt(skillXp.getOrDefault(skill, 0) / 10.0));
     }
 
     public boolean isFree() {

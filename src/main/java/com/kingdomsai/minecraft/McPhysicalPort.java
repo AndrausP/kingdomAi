@@ -60,8 +60,13 @@ public final class McPhysicalPort implements PhysicalPort {
         return rl == null ? Items.AIR : BuiltInRegistries.ITEM.get(rl);
     }
 
+    /** A ferramenta de verdade da mochila ("minecraft:stone_pickaxe") ou, para prever drops, só o tipo ("pickaxe"). */
     private static ItemStack toolStack(String tool) {
-        if (tool == null) return ItemStack.EMPTY;
+        if (tool == null || tool.isEmpty()) return ItemStack.EMPTY;
+        if (tool.contains(":")) {
+            Item it = item(tool);
+            return it == Items.AIR ? ItemStack.EMPTY : new ItemStack(it);
+        }
         return switch (tool) {
             case "pickaxe" -> new ItemStack(Items.IRON_PICKAXE);
             case "axe" -> new ItemStack(Items.IRON_AXE);
@@ -122,6 +127,36 @@ public final class McPhysicalPort implements PhysicalPort {
         Map<String, Integer> out = new TreeMap<>();
         for (ItemStack st : drops) if (!st.isEmpty()) out.merge(id(st.getItem()), st.getCount(), Integer::sum);
         return out;
+    }
+
+    @Override
+    public int growth(Pos p) {
+        BlockPos pos = bp(p);
+        if (!level.isLoaded(pos)) return -1;
+        BlockState s = level.getBlockState(pos);
+        if (!(s.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop)) return -1;
+        if (crop.isMaxAge(s)) return 100;
+        // idade pela propriedade "age" (trigo 0-7, beterraba 0-3...), sem depender de getters protegidos
+        for (var prop : s.getProperties())
+            if (prop instanceof net.minecraft.world.level.block.state.properties.IntegerProperty ip && ip.getName().equals("age")) {
+                int max = java.util.Collections.max(ip.getPossibleValues());
+                return max <= 0 ? 0 : Math.min(99, 100 * s.getValue(ip) / max);
+            }
+        return 0;
+    }
+
+    @Override
+    public boolean till(UUID npc, Pos p) {
+        BlockPos pos = bp(p);
+        if (!level.isLoaded(pos)) return false;
+        BlockState s = level.getBlockState(pos);
+        if (!(s.is(Blocks.DIRT) || s.is(Blocks.GRASS_BLOCK) || s.is(Blocks.DIRT_PATH))) return false;
+        if (!level.getBlockState(pos.above()).isAir()) return false;
+        level.setBlock(pos, Blocks.FARMLAND.defaultBlockState(), Block.UPDATE_ALL);
+        level.playSound(null, pos, SoundEvents.HOE_TILL, SoundSource.BLOCKS, 1f, 1f);
+        KingdomNpcEntity e = materializer.entity(npc);
+        if (e != null) e.swing(InteractionHand.MAIN_HAND);
+        return true;
     }
 
     @Override
