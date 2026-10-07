@@ -47,6 +47,29 @@ public final class Npc {
 
     public transient boolean materialized;
 
+    // --- cadeias de trabalho (core/work)
+    /** Cadeia que este NPC cumpre como rotina; null = rotina da profissão. */
+    public UUID dutyChainId;
+    /** O que o NPC leva na mão entre uma etapa e outra. */
+    public Map<com.kingdomsai.core.work.Item, Integer> carrying = new EnumMap<>(com.kingdomsai.core.work.Item.class);
+    /** Ferramenta/item a mostrar na mão (o adaptador traduz: pickaxe, hoe, book, raw_iron...). */
+    public String heldItem = "";
+    /** Mochila de itens reais do Minecraft (ordens físicas): id → quantidade. */
+    public Map<String, Integer> bag = new TreeMap<>();
+    /** Ordem física em andamento (quebrar, baú, fabricar...). */
+    public UUID jobId;
+    /** Aprendeu a ler (lendo ou escrevendo livros). */
+    public boolean literate;
+    /** Trabalhando numa cadeia ativa neste segundo (a economia abstrata não conta em dobro). */
+    public transient boolean onDuty;
+
+    // --- chamado do rei (não é salvo: ao recarregar o mundo, cada um volta à rotina)
+    public transient Pos summonTarget;
+    public transient UUID summonedBy;
+    public transient long summonUntil;
+    public transient boolean following;
+    public transient boolean summonArrived;
+
     public Npc() {}
 
     public int trait(Trait t) {

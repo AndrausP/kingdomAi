@@ -36,6 +36,9 @@ public enum Material {
     /** Escada de telhado (facing = lado para onde sobe). */
     ROOF_STAIR,
     CHIMNEY,
+    BOOKSHELF,
+    /** Atril (facing = para onde o leitor olha). */
+    LECTERN,
     /** Bloco explícito (Placement.block) — plantas salvas do mundo ou importadas de .nbt. */
     RAW
 }

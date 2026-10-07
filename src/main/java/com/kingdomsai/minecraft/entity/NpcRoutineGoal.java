@@ -61,7 +61,8 @@ public class NpcRoutineGoal extends Goal {
         if (n.activity == NpcActivity.TALKING) n.activity = NpcActivity.IDLE;
 
         if (--recalc <= 0) {
-            recalc = 40 + mob.getRandom().nextInt(40);
+            // chamado/seguindo: recalcula mais vezes para acompanhar o rei
+            recalc = n.activity == NpcActivity.SUMMONED ? 20 : 40 + mob.getRandom().nextInt(40);
             NpcScheduler.Intent intent = rt.core().scheduler().decide(n, mob.level().getDayTime() % 24000);
             n.activity = intent.activity();
             Pos t = intent.target();
@@ -80,7 +81,7 @@ public class NpcRoutineGoal extends Goal {
         double dist = Math.sqrt(mob.distanceToSqr(target.getX() + 0.5, target.getY(), target.getZ() + 0.5));
         if (dist > radius + 1) {
             if (mob.getNavigation().isDone() || mob.tickCount % 60 == 0) {
-                double speed = n.activity == NpcActivity.PATROL ? 0.6 : 0.55;
+                double speed = n.activity == NpcActivity.SUMMONED ? 0.8 : n.activity == NpcActivity.PATROL ? 0.6 : 0.55;
                 mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
             }
             // anti-travamento: se não progride por 30s, teleporta para perto do destino
@@ -94,6 +95,12 @@ public class NpcRoutineGoal extends Goal {
         } else {
             stuckTicks = 0;
             lastDist = dist;
+            // chegou ao chamado: para e olha para o rei
+            if (n.activity == NpcActivity.SUMMONED && n.summonedBy != null) {
+                mob.getNavigation().stop();
+                ServerPlayer king = rt.server().getPlayerList().getPlayer(n.summonedBy);
+                if (king != null) mob.getLookControl().setLookAt(king, 30f, 30f);
+            }
             if (n.activity == NpcActivity.WORK && mob.tickCount % 30 == 0 && mob.getRandom().nextInt(3) == 0) {
                 mob.swing(InteractionHand.MAIN_HAND);
                 mob.getLookControl().setLookAt(target.getX() + 0.5, target.getY() - 0.5, target.getZ() + 0.5);

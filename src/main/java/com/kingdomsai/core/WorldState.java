@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Todo o estado salvo do mundo. Cada entidade tem UUID — nunca só o nome. */
 public final class WorldState {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     public int schemaVersion = SCHEMA_VERSION;
     public long seed = new Random().nextLong();
@@ -31,6 +31,14 @@ public final class WorldState {
     /** Plantas salvas do mundo ou importadas de .nbt (blocos explícitos). */
     public List<com.kingdomsai.core.construction.Blueprint> savedBlueprints = new ArrayList<>();
     public List<String> chronicle = new ArrayList<>();
+    /** Cadeias de trabalho (v2). */
+    public Map<UUID, com.kingdomsai.core.work.WorkChain> chains = new LinkedHashMap<>();
+    public int chainCounter;
+    /** Livros e cartas (v2). */
+    public Map<UUID, com.kingdomsai.core.work.Document> documents = new LinkedHashMap<>();
+    /** Ordens físicas: quebrar, baús, fabricar (v2). */
+    public Map<UUID, com.kingdomsai.core.skill.PhysicalJob> jobs = new LinkedHashMap<>();
+    public int jobCounter;
     public List<GameEvent> events = new ArrayList<>();
 
     public WorldState() {}

@@ -41,6 +41,14 @@ public final class KingdomsCore {
     private final EventBus bus;
     private final Random rng;
     private WorldPort world = WorldPort.NONE;
+    /** Última posição conhecida de cada jogador (adaptador e CLI atualizam) — para "venha aqui" e "me siga". */
+    private final Map<UUID, Pos> playerPositions = new HashMap<>();
+    /** Para onde cada jogador está olhando (bloco na mira + direção) — "quebre isso", "abra esse baú". */
+    private final Map<UUID, Look> playerLooks = new HashMap<>();
+    private com.kingdomsai.core.port.PhysicalPort physical = com.kingdomsai.core.port.PhysicalPort.NONE;
+
+    /** @param facing north|south|east|west */
+    public record Look(Pos block, String facing) {}
     private java.util.concurrent.Executor mainThread = Runnable::run;
 
     private final ActionSystem actions;
@@ -54,6 +62,8 @@ public final class KingdomsCore {
     private final ContextBuilder contextBuilder;
     private final LlmGateway llm;
     private final DialogueService dialogue;
+    private final com.kingdomsai.core.work.WorkSystem work;
+    private final com.kingdomsai.core.skill.SkillSystem skills;
 
     public KingdomsCore(WorldState state, CoreConfig config) {
         this.state = state;
@@ -75,6 +85,8 @@ public final class KingdomsCore {
         this.contextBuilder = new ContextBuilder(this);
         this.llm = new LlmGateway(this);
         this.dialogue = new DialogueService(this);
+        this.work = new com.kingdomsai.core.work.WorkSystem(this);
+        this.skills = new com.kingdomsai.core.skill.SkillSystem(this);
         wireReactions();
     }
 
@@ -111,6 +123,8 @@ public final class KingdomsCore {
         long t = state.tick;
         if (t % 20 == 0) {
             scheduler.tickSecond();
+            work.tickSecond();   // zera e marca quem está em cadeia (onDuty)
+            skills.tickSecond(); // ordens físicas marcam por cima
             construction.tickSecond();
         }
         if (t % config.ticks(config.economicTickSeconds) == 0) economy.tick();
@@ -278,6 +292,14 @@ public final class KingdomsCore {
         return state.tick;
     }
 
+    public void updatePlayerPos(UUID player, Pos pos) {
+        if (player != null && pos != null) playerPositions.put(player, pos);
+    }
+
+    public Pos playerPos(UUID player) {
+        return player == null ? null : playerPositions.get(player);
+    }
+
     public WorldPort world() {
         return world;
     }
@@ -333,6 +355,30 @@ public final class KingdomsCore {
 
     public DialogueService dialogue() {
         return dialogue;
+    }
+
+    public com.kingdomsai.core.work.WorkSystem work() {
+        return work;
+    }
+
+    public com.kingdomsai.core.skill.SkillSystem skills() {
+        return skills;
+    }
+
+    public com.kingdomsai.core.port.PhysicalPort physical() {
+        return physical;
+    }
+
+    public void setPhysical(com.kingdomsai.core.port.PhysicalPort port) {
+        this.physical = port == null ? com.kingdomsai.core.port.PhysicalPort.NONE : port;
+    }
+
+    public void updatePlayerLook(UUID player, Pos block, String facing) {
+        if (player != null) playerLooks.put(player, new Look(block, facing));
+    }
+
+    public Look playerLook(UUID player) {
+        return player == null ? null : playerLooks.get(player);
     }
 
     public int llmMaxChars() {

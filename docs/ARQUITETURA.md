@@ -27,6 +27,10 @@ Status: ✅ implementado · 🟡 parcial · ⏳ fase futura.
 | Save com UUIDs, versionado, migração, backup | ✅ | `persistence/*` |
 | LOD: NPCs viram entidades perto do jogador; obras distantes avançam e "materializam" ao carregar | ✅ | `NpcMaterializer`, `ConstructionSystem.tickSecond` + `ConstructionExecutor` |
 | Debug da IA | ✅ | `/k debug npc|ai|events` |
+| Cadeias de trabalho: rotina adotada pelo chat, etapas físicas (ir, minerar, entregar no baú, fundir, guardar), validação antes de começar, quebra e retomada da mesma etapa | ✅ | `core/work/*` (`ChainValidator`, `WorkSystem`, `ChainTemplates`), ação `CHAIN`/`STOP_CHAIN`, `/k chains` |
+| Ordens com as mãos (quebrar/cavar/túnel, cortar árvore, baús, fabricar com receitas do jogo, entregar ao rei) com validação e planejamento de ingredientes | ✅ | `core/skill/*` (`JobPlanner`, `SkillSystem`, `ItemNames`), `port/PhysicalPort` ↔ `minecraft/McPhysicalPort`, ação `JOB`/`CANCEL_JOB`, [`JOGABILIDADE.md`](JOGABILIDADE.md) |
+| Chamar/seguir/dispensar NPC (tecla G) e muralha sob medida da vila | ✅ | `NpcScheduler.summon`, `construction/VillageWall` |
+| Biblioteca, livros (escrever/ler vira memória) e cartas entregues em mãos | ✅ | `work/Document`, planta `library`, `/k books` |
 
 ## Próximas fases (seção 95)
 
@@ -39,7 +43,7 @@ Status: ✅ implementado · 🟡 parcial · ⏳ fase futura.
 
 ## Decisões importantes
 
-1. **Core sem Minecraft.** Nada em `com.kingdomsai.core` importa `net.minecraft`. `CoreSelfTest` roda o Core com um mundo falso (33 verificações).
+1. **Core sem Minecraft.** Nada em `com.kingdomsai.core` importa `net.minecraft`. `CoreSelfTest` roda o Core com um mundo falso (130 verificações, incluindo `WorkSelfTest`, `AbilitySelfTest` e `SkillSelfTest`).
 2. **NPC não é LLM.** Rotina, trabalho e reinos de IA rodam com regras/Utility AI. A LLM é chamada só em conversa/ordem.
 3. **A LLM não executa nada.** Ela devolve `{"reply", "actions":[{type, params}]}`; cada ação passa pelo pipeline de validação com as permissões de quem ordenou. Ações inventadas viram `unknown_action`.
 4. **Texto do mundo é dado, não instrução.** Entrada do jogador vai dentro de `<untrusted>`, com `<`, `>` e `===` neutralizados.
@@ -47,9 +51,30 @@ Status: ✅ implementado · 🟡 parcial · ⏳ fase futura.
 6. **Entidades não são salvas no chunk.** O estado vive no Core; a entidade é recriada (sem duplicatas) quando o jogador chega perto.
 7. **Construção não destrói o que o jogador fez.** Só limpa blocos naturais; terrenos com blocos artificiais são recusados pelo `checkSite`.
 
+## Cadeias de trabalho (`core/work`)
+
+```
+fala do rei ──► LLM/regras ──► CHAIN{template | steps JSON}
+                                  │
+            Validators.SCHEMA ────┤ ChainTemplates.spec: modelo/JSON válido?
+            Validators.WORLD  ────┤ ChainValidator: pessoas (vivas, capazes, alfabetizadas),
+                                  │   lugares (forja/armazém/fazenda/biblioteca prontos),
+                                  │   fluxo (simula 1 ciclo: mão de cada papel + baú de cada prédio)
+                                  ▼
+                           WorkSystem.start ── cada papel com cursor próprio, em paralelo
+```
+
+- Papéis se acoplam pelos **baús** dos prédios (`Building.inventory`); o NPC carrega itens em `Npc.carrying` (máx. 48).
+- Estados por papel: a caminho → trabalhando → esperando (insumo, trigo amadurecendo, mãos cheias) → descansando (noite/praça).
+- **Quebra** (`CHAIN_BROKEN`) = peça faltando (pessoa morta/remanejada/sem a profissão, prédio inexistente). Cursores são mantidos; a cada 15 s `tryRepair` procura substituto da mesma profissão e retoma (`CHAIN_RESUMED`) da mesma etapa. Esperar mais de 2 min gera `CHAIN_BOTTLENECK`.
+- `NpcScheduler` pede o destino a `WorkSystem.intentFor` antes da rotina da profissão; `EconomySystem` não conta em dobro quem está em cadeia (`Npc.onDuty`).
+- Save v2 (`Migrations`): `chains`, `documents`, `chainCounter`, `Npc.carrying/dutyChainId/literate/heldItem`, `Building.inventory/cropPlantedTick/seeded`.
+- Testes: `WorkSelfTest` (32 verificações, chamado pelo `CoreSelfTest`).
+
 ## Números de balanceamento (ajustáveis)
 
 - Ciclo econômico 10 s: fazendeiro +3 comida (×1,6 com fazenda, até 3 por fazenda), todos −1 comida, militar −0,5 comida −0,4 ouro, imposto 0,12 ouro × população × nível.
 - Construtor: 2 blocos/s; limpeza de terreno não custa tempo na simulação abstrata.
 - Moradia: 6 vagas iniciais + casa pequena 3 / média 5 / quartel 4 / salão 2.
 - Recrutar: 15 ouro; reivindicar célula: 40 ouro.
+- Cadeias: minerar 6 s/unidade, cortar 4 s, fundir 8 s/barra (1 carvão a cada 2), forjar 15 s/espada (2 barras), plantar 20 s, trigo amadurece em 4 min, colheita 12 trigo + 2 sementes, escrever livro 60 s / carta 20 s, ler 45 s. Fora do ofício: 60% da velocidade.

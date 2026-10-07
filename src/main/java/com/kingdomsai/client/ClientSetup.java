@@ -28,6 +28,9 @@ public final class ClientSetup {
             GLFW.GLFW_KEY_M, "key.categories.kingdomsai");
     public static final KeyMapping UI_KEY = new KeyMapping("key.kingdomsai.interface", InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_LEFT_ALT, "key.categories.kingdomsai");
+    /** G = chamar: o súdito na mira (ou o selecionado) vem até onde o rei está — inclusive no Manager. */
+    public static final KeyMapping CALL_KEY = new KeyMapping("key.kingdomsai.call", InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_G, "key.categories.kingdomsai");
 
     private static int refresh;
 
@@ -44,6 +47,7 @@ public final class ClientSetup {
         public static void keys(RegisterKeyMappingsEvent e) {
             e.register(MANAGER_KEY);
             e.register(UI_KEY);
+            e.register(CALL_KEY);
         }
 
         @SubscribeEvent
@@ -69,6 +73,12 @@ public final class ClientSetup {
                     if (ClientState.snapshot != null) mc.setScreen(new ManagerScreen(ClientState.snapshot));
                     PacketDistributor.sendToServer(new Payloads.ManagerRequest(ClientState.snapshot == null));
                 }
+            }
+            while (CALL_KEY.consumeClick()) {
+                if (mc.screen != null) continue;
+                if (mc.hitResult instanceof EntityHitResult eh && eh.getEntity() instanceof KingdomNpcEntity npc)
+                    PacketDistributor.sendToServer(new Payloads.ManagerAction("select " + npc.getId()));
+                PacketDistributor.sendToServer(new Payloads.ManagerAction("call"));
             }
             if (ClientState.managerOn && mc.screen == null && ++refresh % 40 == 0)
                 PacketDistributor.sendToServer(new Payloads.ManagerRequest(false));

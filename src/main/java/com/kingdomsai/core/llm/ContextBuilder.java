@@ -47,7 +47,23 @@ public final class ContextBuilder {
         sb.append("\nPlanta personalizada: BUILD com blueprint=custom e kind (casa, quartel, forja, armazem, salao, torre, capela, taverna), ")
                 .append("width/depth 5-15, floors 1-3, roof (plano|piramide|duas_aguas), wall e roof_material (")
                 .append(com.kingdomsai.core.construction.ParametricBlueprints.materialList()).append("), chimney (true/false).");
+        sb.append("\nORDENS COM AS MÃOS (JOB): quebrar/cavar/túnel/limpar área, cortar árvore, pegar/guardar em baú, fabricar (receitas do Minecraft) e entregar ao rei. ")
+                .append("Lugares vêm da MIRA do rei (veja \"Mira do rei\" em WORLD DATA). Itens em português ou id (\"picareta de ferro\", \"minecraft:torch\"). ")
+                .append("Ex.: JOB(kind=craft, item=picareta de ferro, give=true) — o jogo busca os ingredientes no baú e faz gravetos/tábuas se faltar. ")
+                .append("Proibido: quebrar construções, baús ou terra de outro reino (o jogo recusa). Cancelar: CANCEL_JOB.");
+        sb.append("\nMuralha: BUILD com blueprint=muralha (height 3-6) — o jogo mede a vila (veja \"Vila:\" em WORLD DATA) e cerca tudo; não invente coordenadas.");
+        sb.append("\nChamar alguém até o rei: SUMMON(npc); acompanhar: FOLLOW(npc, minutes); dispensar: DISMISS(npc).");
         sb.append("\nPrazos: deadline=30s|5m|2h|1d|amanha (1 dia = 20 min de jogo). DEADLINE muda o prazo de uma obra existente.");
+        sb.append("\nCADEIAS DE TRABALHO (CHAIN): rotinas que o NPC adota daqui em diante (repeat=true) ou tarefa única (repeat=false). ")
+                .append("Prefira um template; para algo diferente, mande steps como lista JSON ")
+                .append("[{\"role\":\"minerador\",\"type\":\"MINE\",\"params\":{\"item\":\"raw_iron\",\"amount\":\"8\"}}, ...]. ")
+                .append("O nome do papel pode ser uma profissão (minerador, ferreiro, fazendeiro, lenhador, escriba). Etapas: ");
+        for (com.kingdomsai.core.work.StepType st : com.kingdomsai.core.work.StepType.values())
+            sb.append(st.name()).append('(').append(st.paramHelp).append("), ");
+        sb.append("Itens: raw_iron, coal, stone, log, wheat, iron_ingot, sword, letter. Lugares: smithy, storage, farm, library, mine, forest. ")
+                .append("Regras: só se entrega o que está na mão; SMELT usa ferro bruto e carvão que alguém entregou na forja; HARVEST exige PLANT; ")
+                .append("ler/escrever exige biblioteca e alguém alfabetizado. Para parar: STOP_CHAIN. Templates: ");
+        com.kingdomsai.core.work.ChainTemplates.TEMPLATES.forEach((id, d) -> sb.append(id).append(" = ").append(d).append("; "));
         sb.append("\nTratados: NON_AGGRESSION, TRADE_AGREEMENT, DEFENSIVE_ALLIANCE, OPEN_BORDERS. Recursos: FOOD, WOOD, STONE, IRON, GOLD, WEAPONS.\n");
         return sb.toString();
     }
@@ -73,9 +89,17 @@ public final class ContextBuilder {
                 .append(". Lealdade ao rei: ").append(npc.loyalty).append("/100. Fama: ").append(npc.fame).append(".\n");
         user.append("Agora: ").append(npc.activity.display).append(" (").append(npc.currentTask).append("). Fome ")
                 .append((int) npc.hunger).append("/100, energia ").append((int) npc.energy).append("/100.\n");
+        if (!npc.bag.isEmpty()) user.append("Mochila: ").append(com.kingdomsai.core.skill.SkillSystem.summary(npc.bag)).append(".\n");
+        if (playerKingdom != null) user.append(lookLine(playerKingdom.rulerPlayer));
+        if (!npc.carrying.isEmpty()) user.append("Na mão: ").append(com.kingdomsai.core.work.ChainValidator.summary(npc.carrying)).append(".\n");
+        user.append(com.kingdomsai.core.work.ChainValidator.canRead(npc) ? "Sabe ler" : "Não sabe ler")
+                .append(com.kingdomsai.core.work.ChainValidator.canWrite(npc) ? " e escrever.\n" : (com.kingdomsai.core.work.ChainValidator.canRead(npc) ? ", mas não escreve.\n" : ".\n"));
         if (npcKingdom != null) user.append("Local: ").append(core.scheduler() == null ? "" : sanitize(npcKingdom.name))
                 .append(", perto de ").append(npc.pos == null ? "?" : (int) npc.pos.distXZ(npcKingdom.center) + " blocos do centro").append(".\n");
         if (playerKingdom != null) for (String f : core.advisor().facts(playerKingdom)) user.append(f).append('\n');
+        if (npcKingdom != null) user.append(com.kingdomsai.core.construction.VillageWall.describe(core, npcKingdom)).append('\n');
+        if (playerKingdom != null && npc.pos != null && core.playerPos(playerKingdom.rulerPlayer) != null)
+            user.append("O rei está a ").append((int) npc.pos.distXZ(core.playerPos(playerKingdom.rulerPlayer))).append(" blocos de você.\n");
         if (!npc.relations.isEmpty()) {
             user.append("Relações: ");
             npc.relations.entrySet().stream()
@@ -101,12 +125,27 @@ public final class ContextBuilder {
                 + OUTPUT_RULES + actionCatalog();
         StringBuilder user = new StringBuilder("=== WORLD DATA ===\n");
         for (String f : core.advisor().facts(k)) user.append(f).append('\n');
+        user.append(com.kingdomsai.core.construction.VillageWall.describe(core, k)).append('\n');
+        user.append(lookLine(k.rulerPlayer));
         user.append("Pessoas: ");
         core.citizens(k.id).stream().limit(40).forEach(n -> user.append(n.name).append(" (").append(n.title()).append("), "));
         user.append('\n');
         user.append("\n=== PLAYER INPUT ===\n<untrusted>").append(sanitize(Text.truncate(playerText, 500))).append("</untrusted>\n");
         return new LlmRequest("council", sys, Text.truncate(user.toString(), core.llmMaxChars()), k.id,
                 advisor == null ? null : advisor.id, playerText);
+    }
+
+    /** "Mira do rei: baú em x y z, com 12 barra de ferro..." — para "quebre isso", "pegue desse baú". */
+    private String lookLine(java.util.UUID player) {
+        KingdomsCore.Look look = core.playerLook(player);
+        if (look == null || look.block() == null) return "";
+        var info = core.physical().block(look.block());
+        if (info == com.kingdomsai.core.port.PhysicalPort.BlockInfo.UNKNOWN) return "";
+        StringBuilder sb = new StringBuilder("Mira do rei: ").append(com.kingdomsai.core.skill.ItemNames.display(info.id()))
+                .append(" em ").append(look.block()).append(" (olhando para ").append(look.facing()).append(")");
+        var contents = core.physical().container(look.block());
+        if (contents != null) sb.append(", contém: ").append(contents.isEmpty() ? "nada" : com.kingdomsai.core.skill.SkillSystem.summary(contents));
+        return sb.append(".\n").toString();
     }
 
     public static List<Memory> relevantMemories(Npc npc, String query, int n) {

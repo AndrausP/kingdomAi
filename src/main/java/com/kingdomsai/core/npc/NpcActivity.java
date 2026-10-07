@@ -9,7 +9,8 @@ public enum NpcActivity {
     SOCIALIZE("conversando na praça"),
     GO_HOME("indo para casa"),
     SLEEP("dormindo"),
-    TALKING("falando com o rei");
+    TALKING("falando com o rei"),
+    SUMMONED("atendendo ao chamado do rei");
 
     public final String display;
 

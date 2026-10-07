@@ -67,6 +67,16 @@ public final class ActionSystem {
                     yield why == null ? ActionResult.ok("Paz aceita.") : ActionResult.reject("refused", why);
                 }
                 case TALK -> ActionResult.ok("");
+                case CHAIN -> chain(k, r);
+                case JOB -> job(k, r);
+                case CANCEL_JOB -> ActionResult.ok(core.skills().cancel(core.skills().find(k.id, r.param("job") != null ? r.param("job") : r.param("npc")), "ordem do rei"));
+                case SUMMON, FOLLOW -> summon(k, r);
+                case DISMISS -> {
+                    Npc n = core.findNpc(k.id, r.param("npc"));
+                    core.scheduler().dismiss(n);
+                    yield ActionResult.ok(n.name + " foi dispensado e voltou à rotina.");
+                }
+                case STOP_CHAIN -> ActionResult.ok(core.work().stop(Validators.findChain(core, k, r), "ordem do rei"));
                 default -> ActionResult.reject("not_available_in_this_phase", r.type() + " ainda não foi implementada.");
             };
         } catch (RuntimeException ex) {
@@ -99,6 +109,7 @@ public final class ActionSystem {
     }
 
     private ActionResult build(Kingdom k, ActionRequest r) {
+        if (com.kingdomsai.core.construction.VillageWall.isWallRequest(r.param("blueprint"))) return buildWall(k, r);
         Blueprint bp = Validators.isCustom(r)
                 ? core.registerSpec(com.kingdomsai.core.construction.ParametricBlueprints.spec(r.params()))
                 : BlueprintLibrary.find(r.param("blueprint"));
@@ -122,6 +133,63 @@ public final class ActionSystem {
         if (deadline > 0) for (Building b : planned) msg += " " + core.construction().setDeadline(b, deadline);
         else if (hasBuilder && !planned.isEmpty()) msg += " ETA " + core.construction().formatEta(planned.get(0)) + ".";
         return ActionResult.ok(msg);
+    }
+
+    /** Ordem física já aprovada: começa e mostra o plano (incluindo as tarefas que o planejador acrescentou). */
+    private ActionResult job(Kingdom k, ActionRequest r) {
+        var plan = com.kingdomsai.core.skill.JobPlanner.plan(core, k, r.actorId(), r.params());
+        var j = core.skills().start(k, plan.job(), r.param("order"));
+        Npc n = core.npc(j.npcId);
+        StringBuilder sb = new StringBuilder("Ordem #" + j.number + " para " + n.name + ":");
+        for (String line : plan.lines()) sb.append("\n   ").append(line);
+        for (String w : plan.warnings()) sb.append("\n⚠ ").append(w);
+        return ActionResult.ok(sb.toString());
+    }
+
+    private ActionResult summon(Kingdom k, ActionRequest r) {
+        Npc n = core.findNpc(k.id, r.param("npc"));
+        com.kingdomsai.core.common.Pos to = Validators.summonTarget(core, r);
+        boolean follow = r.type() == ActionType.FOLLOW;
+        int seconds = follow ? 60 * Math.max(1, Math.min(30, r.intParam("minutes", 3))) : com.kingdomsai.core.ai.NpcScheduler.SUMMON_SECONDS;
+        core.scheduler().summon(n, r.actorId(), to, follow, seconds);
+        int dist = n.pos == null ? 0 : (int) n.pos.distXZ(to);
+        core.bus().publish(core.tick(), EventType.NPC_SUMMONED, GameEvent.Severity.INFO, k.id, n.id,
+                n.name + (follow ? " vai acompanhar o rei." : " foi chamado pelo rei."));
+        if (follow) return ActionResult.ok(n.name + " vai acompanhar Vossa Majestade por " + seconds / 60 + " min" + (dist > 6 ? " (está a " + dist + " blocos)." : "."));
+        return ActionResult.ok(n.name + (dist <= 4 ? " já está aqui." : " está vindo (" + dist + " blocos, ~" + Math.max(1, dist / 4) + " s)."));
+    }
+
+    /** Muralha sob medida: o jogo mede a vila agora e cerca tudo o que já foi construído. */
+    private ActionResult buildWall(Kingdom k, ActionRequest r) {
+        var bounds = com.kingdomsai.core.construction.VillageWall.bounds(core, k);
+        Blueprint wall = com.kingdomsai.core.construction.VillageWall.generate(core, k, r.intParam("height", 4));
+        Building b = core.construction().planWall(k, wall);
+        if (b == null) return ActionResult.reject("no_site", "O traçado da muralha cruza uma obra em andamento. Termine-a ou cancele antes.");
+        core.registerSaved(wall);
+        k.pay(wall.cost());
+        long deadline = r.param("deadline") == null ? -1 : com.kingdomsai.core.construction.ConstructionSystem.parseDuration(r.param("deadline"));
+        StringBuilder msg = new StringBuilder(wall.displayName() + " planejada ao redor de tudo o que já existe: x " + bounds.x0() + "…" + bounds.x1()
+                + ", z " + bounds.z0() + "…" + bounds.z1() + " (" + bounds.perimeter() + " blocos de contorno, 2 portões, "
+                + wall.cost().getOrDefault(ResourceType.STONE, 0) + " de pedra).");
+        int outside = 0;
+        for (int[] c : new int[][]{{bounds.x0(), bounds.z0()}, {bounds.x1(), bounds.z0()}, {bounds.x0(), bounds.z1()}, {bounds.x1(), bounds.z1()}})
+            if (!k.id.equals(core.state().territory.ownerAt(new com.kingdomsai.core.common.Pos(c[0], 0, c[1])))) outside++;
+        if (outside > 0) msg.append(" ⚠ Parte do traçado sai do território (").append(outside).append(" canto(s)) — reivindique mais terras (CLAIM).");
+        if (core.count(k.id, Profession.BUILDER) == 0) msg.append(" Atenção: não há construtores.");
+        else if (deadline > 0) msg.append(' ').append(core.construction().setDeadline(b, deadline));
+        else msg.append(" ETA ").append(core.construction().formatEta(b)).append('.');
+        return ActionResult.ok(msg.toString());
+    }
+
+    /** Cadeia já aprovada pelos validadores: cria e explica o plano (com os avisos). */
+    private ActionResult chain(Kingdom k, ActionRequest r) {
+        var spec = com.kingdomsai.core.work.ChainTemplates.spec(r.params(), core, k);
+        var v = com.kingdomsai.core.work.ChainValidator.validate(core, k, spec);
+        var c = core.work().start(k, v.chain(), r.param("order") != null ? r.param("order") : spec.name);
+        StringBuilder sb = new StringBuilder("Cadeia #" + c.number + " «" + c.name + "» " + (c.repeat ? "(rotina contínua)" : "(tarefa única)") + ":");
+        for (String line : v.plan()) sb.append("\n   ").append(line);
+        for (String w : v.warnings()) sb.append("\n⚠ ").append(w);
+        return ActionResult.ok(sb.toString());
     }
 
     private ActionResult recruit(Kingdom k, int amount) {

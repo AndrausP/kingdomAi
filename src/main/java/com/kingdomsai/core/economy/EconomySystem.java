@@ -73,6 +73,11 @@ public final class EconomySystem {
         int farmers = 0;
         double moraleFactor = 0.6 + k.morale / 250.0; // 0.6..1.0
         for (Npc n : core.citizens(k.id)) {
+            // Quem cumpre uma cadeia produz de verdade (itens no armazém); não conta de novo aqui. Comer, come.
+            if (n.onDuty) {
+                add(d, ResourceType.FOOD, -FOOD_PER_CITIZEN);
+                continue;
+            }
             double skill = 0.8 + n.trait(Trait.DISCIPLINE) / 250.0;
             double f = skill * moraleFactor * (n.hunger < 20 ? 0.5 : 1.0);
             switch (n.profession) {

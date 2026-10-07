@@ -9,6 +9,8 @@ Mod para **NeoForge 1.21.1** que transforma o Minecraft num simulador de reino v
 3. Abra o TLauncher, escolha **kingdoms** na lista de versões e clique em Entrar.
 4. Crie um **mundo novo**. Em ~3 segundos você vira rei: 10 súditos aparecem, os construtores começam o Salão Real e 2 reinos rivais são fundados a ~300–450 blocos.
 
+**Com modpack** (Xaero's Minimap, AppleSkin, Sophisticated Backpacks, Sodium + Iris com shaders, Better Leaves): rode `instalar/modpack/INSTALAR-MODPACK.bat` — cria a versão separada **`kingdoms-modpack`**. Detalhes em [`instalar/modpack/LEIA-ME.md`](instalar/modpack/LEIA-ME.md).
+
 Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1" como versão separada, abra a pasta do jogo dessa versão e coloque `kingdomsai-0.2.0.jar` em `mods/`. Não coloque junto com o modpack ATM.
 
 ## Como jogar
@@ -23,7 +25,34 @@ Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1"
 | Configurar IA/modelo | aba **⚙ Config** do Manager ou `/k config ...` |
 | Todos os comandos | `/k help` (`/kingdom` e `/reino` também funcionam) |
 
-Comandos úteis: `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `claim`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`.
+Comandos úteis: `chains`, `books`, `status`, `npc list`, `npc inspect <nome>`, `assign fazendeiro 2`, `army recruit 3`, `claim`, `tax up`, `diplomacy`, `war declare <reino>`, `events`, `chronicle`, `debug ai`.
+
+### Rotinas e cadeias de trabalho
+
+Fale com um súdito (botão direito → chat) e ele **adota a rotina daqui em diante**. A IA (ou o interpretador de regras, sem LLM) monta a cadeia, o jogo **valida cada etapa antes** e mostra o plano:
+
+| Você diz | O que acontece |
+|---|---|
+| ao minerador: *"daqui pra frente minere ferro e leve para o ferreiro derreter e guardar no baú"* | minerador vai à mina → minera ferro bruto e carvão → entrega no baú da forja → ferreiro **espera o ferro**, funde as barras → guarda no armazém (vira Ferro do reino) |
+| ao fazendeiro: *"plante e colha o trigo"* | planta → **espera o trigo amadurecer** (~4 min) → colhe (volta semente para o baú da fazenda) → guarda no armazém |
+| *"construa uma biblioteca"*, depois ao estudioso: *"escreva um livro sobre a mina de ferro"* | escreve na biblioteca um livro feito das memórias dele e do que vê no reino; outros podem **ler** e passam a lembrar do conteúdo |
+| *"escreva uma carta para Bruna dizendo que a colheita foi boa"* | escreve e **leva a carta em mãos**; Bruna guarda na memória (se não souber ler, o mensageiro lê para ela) |
+| *"pode parar com essa rotina"* | encerra a rotina; a pessoa volta à profissão |
+
+- **Validação**: sem forja, sem carvão chegando na forja, colher sem plantar, fazendeiro tentando fundir, iletrado tentando escrever, entregar o que não tem na mão → a cadeia é recusada com o motivo. Gargalos e sobras viram avisos.
+- **Quebra e retomada**: se o ferreiro morre, muda de profissão ou a forja some, a cadeia **quebra** (evento ⚠) e guarda onde cada um parou. A cada 15 s ela tenta se remontar (outro ferreiro livre, prédio de volta) e **retoma da mesma etapa**. Esperar insumo não é quebra.
+- Comandos: `chains` · `chain <nº>` (etapas, quem está onde, baús, histórico) · `chain <nº> stop|resume` · `chain new minerar_ferreiro npc=Nome forge=true` · `books` · `book <nº>`.
+- No Manager, o painel **ROTINAS** mostra cada cadeia (⛓ ativa / ⚠ quebrada) e o que cada pessoa está fazendo; o NPC segura a ferramenta ou o item da etapa (picareta, minério, barra, livro, carta).
+
+### Ordens com as mãos: quebrar, baús, fabricar
+
+Mire e fale: *"quebre esse bloco"*, *"cave um buraco 3x3x3 aqui"*, *"abra um túnel de 10 blocos"*, *"corte essa árvore"*, *"pegue 5 barras de ferro desse baú"*, *"guarde tudo no armazém"*, *"faça uma picareta de ferro e me entregue"*. Os itens são **reais** (saem do baú, caem dos blocos, a picareta vai para a sua mão). O súdito planeja sozinho o que falta (pega ferro no baú, faz tábuas → gravetos), respeita as receitas do Minecraft e nunca quebra construções, baús, terra de outro reino ou blocos colados em água/lava. Comandos: `jobs`, `job <nome> dig 3x3x3`, `job <nome> craft 4 tocha entregar`, `bag <nome>`. Regras completas e o que foi testado: [`docs/JOGABILIDADE.md`](docs/JOGABILIDADE.md).
+
+### Chamar súditos e o tamanho da vila
+
+- **Chamar**: mire num súdito (ou selecione no Manager) e aperte **G** — ele larga o que faz (a rotina fica em pausa, nada quebra) e vem até onde você está, inclusive embaixo da câmera do Manager. Também: botões 📣 Chamar / 👣 Seguir-me / ✋ Dispensar na ficha, `/k call|follow|dismiss <nome>`, ou no chat: *"venha aqui"*, *"me siga"*, *"pode ir"*. Chamado vale até de noite; mais de 400 blocos é longe demais.
+- **A vila tem tamanho**: o jogo mede a área ocupada pelas construções (+5 de folga). `/k village` mostra; a IA recebe essa medida e os guardas patrulham a borda.
+- *"Construa um muro ao redor da vila"* (ou `/k build muralha height=5`): muralha de pedra **sob medida**, que acompanha o relevo, com 2 portões, ameias, torres e tochas. É um anel — dá para continuar construindo dentro. Sem pedra suficiente, o jogo diz quanto falta.
 
 ### Construção
 

@@ -18,7 +18,11 @@ public final class Migrations {
             // v0 → v1: versão inicial; nada a converter.
             root.addProperty("schemaVersion", 1);
         }
-        // if (v < 2) { ... }
+        if (v < 2) {
+            // v1 → v2: cadeias de trabalho, livros/cartas, baús e mãos dos NPCs, ordens físicas e mochila. Campos novos; os padrões vêm do repair().
+            root.addProperty("schemaVersion", 2);
+        }
+        // if (v < 3) { ... }
     }
 
     /** Garante campos não nulos após carregar (Gson ignora inicializadores para campos ausentes em alguns casos). */
@@ -32,7 +36,31 @@ public final class Migrations {
         if (s.chronicle == null) s.chronicle = new ArrayList<>();
         if (s.blueprintSpecs == null) s.blueprintSpecs = new LinkedHashMap<>();
         if (s.savedBlueprints == null) s.savedBlueprints = new ArrayList<>();
+        if (s.chains == null) s.chains = new LinkedHashMap<>();
+        if (s.documents == null) s.documents = new LinkedHashMap<>();
+        if (s.jobs == null) s.jobs = new LinkedHashMap<>();
+        for (var j : s.jobs.values()) {
+            if (j.tasks == null) j.tasks = new ArrayList<>();
+            if (j.log == null) j.log = new ArrayList<>();
+            if (j.gained == null) j.gained = new TreeMap<>();
+            if (j.reason == null) j.reason = "";
+            for (var t : j.tasks) if (t.blocks == null) t.blocks = new ArrayList<>();
+            if (j.number > s.jobCounter) s.jobCounter = j.number;
+        }
+        for (var c : s.chains.values()) {
+            if (c.steps == null) c.steps = new ArrayList<>();
+            if (c.roles == null) c.roles = new LinkedHashMap<>();
+            if (c.log == null) c.log = new ArrayList<>();
+            if (c.cycleOutput == null) c.cycleOutput = new EnumMap<>(com.kingdomsai.core.work.Item.class);
+            if (c.brokenReason == null) c.brokenReason = "";
+            if (c.number > s.chainCounter) s.chainCounter = c.number;
+        }
+        for (var d : s.documents.values()) {
+            if (d.facts == null) d.facts = new ArrayList<>();
+            if (d.readers == null) d.readers = new ArrayList<>();
+        }
         for (var b : s.buildings.values()) {
+            if (b.inventory == null) b.inventory = new EnumMap<>(com.kingdomsai.core.work.Item.class);
             if (b.builderIds == null) b.builderIds = new ArrayList<>();
             if (b.builderId != null && !b.builderIds.contains(b.builderId)) b.builderIds.add(b.builderId);
             if (b.residents == null) b.residents = new ArrayList<>();
@@ -51,6 +79,9 @@ public final class Migrations {
             if (n.currentTask == null) n.currentTask = "";
             if (n.lastDecision == null) n.lastDecision = "";
             if (n.lastLlmCall == null) n.lastLlmCall = "";
+            if (n.carrying == null) n.carrying = new EnumMap<>(com.kingdomsai.core.work.Item.class);
+            if (n.heldItem == null) n.heldItem = "";
+            if (n.bag == null) n.bag = new TreeMap<>();
         }
         s.schemaVersion = WorldState.SCHEMA_VERSION;
     }

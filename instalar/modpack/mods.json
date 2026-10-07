@@ -1,0 +1,67 @@
+{
+  "versao": "kingdoms-modpack",
+  "minecraft": "1.21.1",
+  "loader": "neoforge",
+  "itens": [
+    {
+      "nome": "Xaero's Minimap",
+      "tipo": "mod",
+      "modrinth": "xaeros-minimap",
+      "curseforge": "https://www.curseforge.com/minecraft/mc-mods/xaeros-minimap"
+    },
+    {
+      "nome": "AppleSkin",
+      "tipo": "mod",
+      "modrinth": "appleskin",
+      "curseforge": "https://www.curseforge.com/minecraft/mc-mods/appleskin"
+    },
+    {
+      "nome": "Sophisticated Backpacks",
+      "tipo": "mod",
+      "modrinth": "sophisticated-backpacks",
+      "busca": "Sophisticated Backpacks",
+      "curseforge": "https://www.curseforge.com/minecraft/mc-mods/sophisticated-backpacks"
+    },
+    {
+      "nome": "Epic Hunt: Medieval Animals and More!",
+      "tipo": "mod",
+      "modrinth": "epic-hunt",
+      "busca": "Epic Hunt",
+      "curseforge": "https://www.curseforge.com/minecraft/mc-mods/epic-hunt",
+      "aviso": "Até a última verificação só havia Forge/Fabric (1.20.1). Se não existir versão NeoForge 1.21.1, ele fica de fora."
+    },
+    {
+      "nome": "Sodium (base do Epic Shaders)",
+      "tipo": "mod",
+      "modrinth": "sodium",
+      "curseforge": "https://www.curseforge.com/minecraft/modpacks/epic-shaders"
+    },
+    {
+      "nome": "Iris Shaders (base do Epic Shaders)",
+      "tipo": "mod",
+      "modrinth": "iris",
+      "curseforge": "https://www.curseforge.com/minecraft/modpacks/epic-shaders"
+    },
+    {
+      "nome": "Complementary Shaders - Reimagined",
+      "tipo": "shader",
+      "modrinth": "complementary-reimagined",
+      "padrao": true,
+      "curseforge": "https://www.curseforge.com/minecraft/modpacks/epic-shaders"
+    },
+    {
+      "nome": "BSL Shaders",
+      "tipo": "shader",
+      "modrinth": "bsl-shaders",
+      "curseforge": "https://www.curseforge.com/minecraft/modpacks/epic-shaders"
+    },
+    {
+      "nome": "Motschen's Better Leaves",
+      "tipo": "resourcepack",
+      "modrinth": "better-leaves",
+      "busca": "Better Leaves Motschen",
+      "ativar": true,
+      "curseforge": "https://www.curseforge.com/minecraft/texture-packs/motschens-better-leaves"
+    }
+  ]
+}

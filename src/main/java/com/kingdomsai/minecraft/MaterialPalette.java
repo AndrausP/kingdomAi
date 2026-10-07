@@ -77,6 +77,8 @@ public final class MaterialPalette {
             case BANNER -> Blocks.WHITE_BANNER.defaultBlockState();
             case LADDER -> Blocks.LADDER.defaultBlockState().setValue(LadderBlock.FACING, dir);
             case CHIMNEY -> Blocks.BRICKS.defaultBlockState();
+            case BOOKSHELF -> Blocks.BOOKSHELF.defaultBlockState();
+            case LECTERN -> Blocks.LECTERN.defaultBlockState().setValue(LecternBlock.FACING, dir);
         };
     }
 
