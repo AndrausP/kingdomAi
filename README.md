@@ -9,6 +9,8 @@ Mod para **NeoForge 1.21.1** que transforma o Minecraft num simulador de reino v
 3. Abra o TLauncher, escolha **kingdoms** na lista de versões e clique em Entrar.
 4. Crie um **mundo novo**. Em ~3 segundos você vira rei: 10 súditos aparecem, os construtores começam o Salão Real e 2 reinos rivais são fundados a ~300–450 blocos.
 
+**Com modpack** (Xaero's Minimap, AppleSkin, Sophisticated Backpacks, Sodium + Iris com shaders, Better Leaves): rode `instalar/modpack/INSTALAR-MODPACK.bat` — cria a versão separada **`kingdoms-modpack`**. Detalhes em [`instalar/modpack/LEIA-ME.md`](instalar/modpack/LEIA-ME.md).
+
 Instalação manual (se o script falhar): no TLauncher instale "NeoForge 1.21.1" como versão separada, abra a pasta do jogo dessa versão e coloque `kingdomsai-0.2.0.jar` em `mods/`. Não coloque junto com o modpack ATM.
 
 ## Como jogar

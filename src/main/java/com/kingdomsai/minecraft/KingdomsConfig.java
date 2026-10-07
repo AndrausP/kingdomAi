@@ -44,6 +44,9 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.IntValue CELL_SIZE;
     public static final ModConfigSpec.IntValue INITIAL_CLAIM_RADIUS;
 
+    // [compat]
+    public static final ModConfigSpec.IntValue MINIMAP_RESERVE;
+
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
         b.push("ai");
@@ -91,6 +94,12 @@ public final class KingdomsConfig {
         INITIAL_CLAIM_RADIUS = b.defineInRange("initial_claim_radius", 3, 1, 10);
         b.pop();
 
+        b.push("compat");
+        MINIMAP_RESERVE = b.comment("Espaço (px da GUI) que o HUD do Manager deixa livre no canto superior esquerdo para o minimapa.",
+                        "-1 = automático (reserva só se o Xaero's Minimap estiver instalado) · 0 = nunca reservar.")
+                .defineInRange("minimap_reserve", -1, -1, 400);
+        b.pop();
+
         // Military (batalhas), Religion, Rebellion e Espionage chegam nas próximas fases.
         SPEC = b.build();
     }
@@ -121,6 +130,7 @@ public final class KingdomsConfig {
         KEYS.put("construction.builder_blocks_per_second", BUILDER_BLOCKS_PER_SECOND);
         KEYS.put("construction.max_blocks_per_tick", MAX_BLOCKS_PER_TICK);
         KEYS.put("diplomacy.enabled", DIPLOMACY_ENABLED);
+        KEYS.put("compat.minimap_reserve", MINIMAP_RESERVE);
     }
 
     /** Define uma chave a partir de texto, validando tipo e faixa. Retorna null se ok, senão o erro. */

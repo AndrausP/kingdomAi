@@ -3,6 +3,7 @@ package com.kingdomsai.client;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.kingdomsai.minecraft.KingdomsConfig;
 import com.kingdomsai.minecraft.entity.KingdomNpcEntity;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -14,6 +15,7 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.neoforged.fml.ModList;
 
 import java.util.Locale;
 
@@ -22,6 +24,7 @@ import static com.kingdomsai.client.UiKit.*;
 /**
  * HUD do Manager Mode enquanto o rei voa com a câmera livre:
  * barra de recursos no topo, eventos à direita, obras com prazo à esquerda, ficha do que a mira aponta embaixo.
+ * Com o Xaero's Minimap instalado, o canto superior esquerdo fica livre para o minimapa.
  */
 public final class ManagerHud {
     private ManagerHud() {}
@@ -39,12 +42,13 @@ public final class ManagerHud {
             return;
         }
         JsonObject k = d.getAsJsonObject("kingdom");
+        int reserve = Math.min(minimapReserve(), w / 3);
 
         // --- barra superior
-        panel(g, 0, 0, w, 20);
+        panel(g, reserve, 0, w, 20);
         String title = "👑 " + k.get("name").getAsString() + "  ·  Dia " + k.get("day").getAsLong();
-        g.drawString(font, title, 6, 6, ACCENT);
-        int x = 12 + font.width(title);
+        g.drawString(font, title, reserve + 6, 6, ACCENT);
+        int x = reserve + 12 + font.width(title);
         x = chip(g, font, x, "Pop", k.get("pop").getAsInt() + "/" + k.get("cap").getAsInt(), k.get("pop").getAsInt() > k.get("cap").getAsInt() ? WARN : TEXT);
         for (JsonElement e : d.getAsJsonArray("res")) {
             JsonObject r = e.getAsJsonObject();
@@ -58,7 +62,7 @@ public final class ManagerHud {
 
         // --- obras (esquerda)
         JsonArray projects = d.has("projects") ? d.getAsJsonArray("projects") : new JsonArray();
-        int y = 26;
+        int y = Math.max(26, reserve + 4);
         if (!projects.isEmpty()) {
             int pw = 170;
             int rows = Math.min(5, projects.size());
@@ -119,6 +123,16 @@ public final class ManagerHud {
         target(g, font, mc, d, w, h);
         hints(g, font, w, h);
     }
+
+    /** Largura/altura livre no canto superior esquerdo para o minimapa (config compat.minimap_reserve). */
+    private static int minimapReserve() {
+        int r = KingdomsConfig.MINIMAP_RESERVE.get();
+        if (r >= 0) return r;
+        if (xaero == null) xaero = ModList.get().isLoaded("xaerominimap") || ModList.get().isLoaded("xaerominimapfair");
+        return xaero ? 140 : 0;
+    }
+
+    private static Boolean xaero;
 
     private static int chip(GuiGraphics g, Font font, int x, String label, String value, int color) {
         g.drawString(font, label, x, 6, MUTED);
