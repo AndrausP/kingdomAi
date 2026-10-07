@@ -52,5 +52,6 @@ public enum EventType {
     JOB_STARTED,
     JOB_DONE,
     JOB_FAILED,
-    MARKER_SET
+    MARKER_SET,
+    ITEMS_DROPPED
 }

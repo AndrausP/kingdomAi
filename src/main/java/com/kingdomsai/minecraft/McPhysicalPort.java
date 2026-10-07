@@ -140,6 +140,12 @@ public final class McPhysicalPort implements PhysicalPort {
 
     // ------------------------------------------------------------------ baús
 
+    /** Baús de outros mods (Sophisticated Backpacks, armazéns...) que só expõem a capability de itens do NeoForge. */
+    private net.neoforged.neoforge.items.IItemHandler handlerAt(BlockPos pos) {
+        if (!level.isLoaded(pos)) return null;
+        return level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+    }
+
     private Container containerAt(BlockPos pos) {
         if (!level.isLoaded(pos)) return null;
         BlockState s = level.getBlockState(pos);
@@ -153,7 +159,16 @@ public final class McPhysicalPort implements PhysicalPort {
     @Override
     public Map<String, Integer> container(Pos p) {
         Container c = containerAt(bp(p));
-        if (c == null) return null;
+        if (c == null) {
+            var h = handlerAt(bp(p));
+            if (h == null) return null;
+            Map<String, Integer> m = new TreeMap<>();
+            for (int i = 0; i < h.getSlots(); i++) {
+                ItemStack st = h.getStackInSlot(i);
+                if (!st.isEmpty()) m.merge(id(st.getItem()), st.getCount(), Integer::sum);
+            }
+            return m;
+        }
         Map<String, Integer> m = new TreeMap<>();
         for (int i = 0; i < c.getContainerSize(); i++) {
             ItemStack st = c.getItem(i);
@@ -166,7 +181,17 @@ public final class McPhysicalPort implements PhysicalPort {
     public int take(UUID npc, Pos chest, String itemId, int n) {
         Container c = containerAt(bp(chest));
         Item it = item(itemId);
-        if (c == null || it == Items.AIR) return 0;
+        if (it == Items.AIR) return 0;
+        if (c == null) {
+            var h = handlerAt(bp(chest));
+            if (h == null) return 0;
+            int left = n;
+            for (int i = 0; i < h.getSlots() && left > 0; i++) {
+                if (!h.getStackInSlot(i).is(it)) continue;
+                left -= h.extractItem(i, left, false).getCount();
+            }
+            return n - left;
+        }
         int left = n;
         for (int i = 0; i < c.getContainerSize() && left > 0; i++) {
             ItemStack st = c.getItem(i);
@@ -182,7 +207,25 @@ public final class McPhysicalPort implements PhysicalPort {
     @Override
     public Map<String, Integer> put(UUID npc, Pos chest, Map<String, Integer> items) {
         Container c = containerAt(bp(chest));
-        if (c == null) return items;
+        if (c == null) {
+            var h = handlerAt(bp(chest));
+            if (h == null) return items;
+            Map<String, Integer> rest = new TreeMap<>();
+            for (var e : items.entrySet()) {
+                Item it = item(e.getKey());
+                if (it == Items.AIR) continue;
+                int left = e.getValue();
+                int max = new ItemStack(it).getMaxStackSize();
+                while (left > 0) {
+                    int n = Math.min(left, max);
+                    ItemStack r = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(h, new ItemStack(it, n), false);
+                    left -= n - r.getCount();
+                    if (!r.isEmpty()) break;
+                }
+                if (left > 0) rest.put(e.getKey(), left);
+            }
+            return rest;
+        }
         Map<String, Integer> rest = new TreeMap<>();
         for (var e : items.entrySet()) {
             Item it = item(e.getKey());
@@ -299,6 +342,38 @@ public final class McPhysicalPort implements PhysicalPort {
         }
         level.playSound(null, sp.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.4f, 1.2f);
         return true;
+    }
+
+    /**
+     * O súdito age em nome do rei: pergunta ao jogo se o rei poderia quebrar ali. Spawn protegido do servidor e
+     * borda do mundo (mayInteract) e claims de outros mods (BlockEvent.BreakEvent, cancelado por eles).
+     * Rei offline: usa o jogador "falso" padrão do NeoForge, que mods de proteção tratam como estranho.
+     */
+    @Override
+    public boolean mayBreak(UUID player, Pos p) {
+        BlockPos pos = bp(p);
+        if (!level.isLoaded(pos)) return false;
+        net.minecraft.world.entity.player.Player who = player == null ? null : server.getPlayerList().getPlayer(player);
+        if (who == null) who = net.neoforged.neoforge.common.util.FakePlayerFactory.getMinecraft(level);
+        if (!level.mayInteract(who, pos)) return false;
+        var ev = new net.neoforged.neoforge.event.level.BlockEvent.BreakEvent(level, pos, level.getBlockState(pos), who);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(ev);
+        return !ev.isCanceled();
+    }
+
+    @Override
+    public void drop(Pos p, Map<String, Integer> items) {
+        for (var e : items.entrySet()) {
+            Item it = item(e.getKey());
+            if (it == Items.AIR) continue;
+            int left = e.getValue();
+            int max = new ItemStack(it).getMaxStackSize();
+            while (left > 0) {
+                int n = Math.min(left, max);
+                net.minecraft.world.Containers.dropItemStack(level, p.x() + 0.5, p.y() + 0.5, p.z() + 0.5, new ItemStack(it, n));
+                left -= n;
+            }
+        }
     }
 
     @Override

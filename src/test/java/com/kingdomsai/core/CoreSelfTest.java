@@ -199,6 +199,11 @@ public final class CoreSelfTest {
         passed += mk[0];
         failed += mk[1];
 
+        // 15. Validação final: segurança, compatibilidade, migração
+        int[] va = ValidationSelfTest.run();
+        passed += va[0];
+        failed += va[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

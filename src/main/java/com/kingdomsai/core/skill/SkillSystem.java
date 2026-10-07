@@ -48,6 +48,14 @@ public final class SkillSystem {
         core.bus().subscribe(EventType.NPC_DIED, e -> {
             for (PhysicalJob j : core.state().jobs.values())
                 if (j.status.live() && j.npcId.equals(e.actorId())) fail(j, "quem fazia morreu");
+            // a mochila não some: cai no chão onde ele morreu (como a de um jogador)
+            Npc dead = core.npc(e.actorId());
+            if (dead != null && !dead.bag.isEmpty() && dead.pos != null && port().isLoaded(dead.pos)) {
+                port().drop(dead.pos, new TreeMap<>(dead.bag));
+                core.bus().publish(core.tick(), EventType.ITEMS_DROPPED, GameEvent.Severity.WARN, dead.kingdomId, dead.id,
+                        "A mochila de " + dead.name + " caiu em " + dead.pos + " (" + summary(dead.bag) + ").");
+                dead.bag.clear();
+            }
         });
     }
 
@@ -225,7 +233,7 @@ public final class SkillSystem {
             BlockInfo info = port().block(p);
             // revalida na hora: algo pode ter mudado desde a ordem
             if (info.air() || info.fluid() || info.blockEntity() || info.nearFluid() || !info.breakable()
-                    || JobPlanner.protectedBy(core, p) != null) {
+                    || JobPlanner.protectedBy(core, p) != null || !port().mayBreak(j.orderedBy, p)) {
                 t.blocks.remove(0);
                 t.progress = 0;
                 continue;

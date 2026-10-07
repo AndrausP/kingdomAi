@@ -137,10 +137,14 @@ public final class Validators {
                     return ActionResult.reject("permission_denied", "Só o governante de " + k.name + " pode ordenar isso.");
             }
             case DIRECTOR -> {
+                if (needsKing(r.type()))
+                    return ActionResult.reject("permission_denied", "Ordem que depende da posição de um rei jogador.");
                 if (k.isPlayerKingdom())
                     return ActionResult.reject("permission_denied", "A IA não governa o reino do jogador.");
             }
             case NPC -> {
+                if (needsKing(r.type()))
+                    return ActionResult.reject("permission_denied", "Só o rei dá essa ordem: ela depende de onde ele está e do que ele mira.");
                 Npc n = core.npc(r.actorId());
                 if (n == null || !n.alive || !k.id.equals(n.kingdomId))
                     return ActionResult.reject("permission_denied", "NPC inválido para este reino.");
@@ -256,6 +260,11 @@ public final class Validators {
         }
         return null;
     };
+
+    /** Ordens presas à posição/mira do rei: quebrar, marcar, chamar. */
+    static boolean needsKing(ActionType t) {
+        return t == ActionType.JOB || t == ActionType.MARK || t == ActionType.SUMMON || t == ActionType.FOLLOW;
+    }
 
     /** Ponto do marco: x y z explícitos, senão em cima do bloco que o rei mira, senão onde ele está. */
     public static com.kingdomsai.core.common.Pos markTarget(KingdomsCore core, ActionRequest r) {

@@ -44,7 +44,7 @@ Status: ✅ implementado · 🟡 parcial · ⏳ fase futura.
 
 ## Decisões importantes
 
-1. **Core sem Minecraft.** Nada em `com.kingdomsai.core` importa `net.minecraft`. `CoreSelfTest` roda o Core com um mundo falso (164 verificações, incluindo `WorkSelfTest`, `AbilitySelfTest`, `SkillSelfTest`, `PersistenceSelfTest` e `MarkerSelfTest`).
+1. **Core sem Minecraft.** Nada em `com.kingdomsai.core` importa `net.minecraft`. `CoreSelfTest` roda o Core com um mundo falso (185 verificações, incluindo `WorkSelfTest`, `AbilitySelfTest`, `SkillSelfTest`, `PersistenceSelfTest`, `MarkerSelfTest` e `ValidationSelfTest`).
 2. **NPC não é LLM.** Rotina, trabalho e reinos de IA rodam com regras/Utility AI. A LLM é chamada só em conversa/ordem.
 3. **A LLM não executa nada.** Ela devolve `{"reply", "actions":[{type, params}]}`; cada ação passa pelo pipeline de validação com as permissões de quem ordenou. Ações inventadas viram `unknown_action`.
 4. **Texto do mundo é dado, não instrução.** Entrada do jogador vai dentro de `<untrusted>`, com `<`, `>` e `===` neutralizados.

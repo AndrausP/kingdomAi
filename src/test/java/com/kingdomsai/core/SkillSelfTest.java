@@ -450,6 +450,18 @@ public final class SkillSelfTest {
             if (anim != Anim.SWING && anim != Anim.CRACK) anims.add(anim.name());
         }
 
+        /** Blocos "protegidos por claim" (outro mod) e itens soltos no chão. */
+        final Set<Pos> claimed = new HashSet<>();
+        final Map<String, Integer> dropped = new TreeMap<>();
+
+        public boolean mayBreak(UUID player, Pos p) {
+            return !claimed.contains(p);
+        }
+
+        public void drop(Pos p, Map<String, Integer> items) {
+            items.forEach((k, v) -> dropped.merge(k, v, Integer::sum));
+        }
+
         public boolean chunkForced(int chunkX, int chunkZ) {
             String k = chunkX + ":" + chunkZ;
             return forced.contains(k) || playerForced.contains(k);
