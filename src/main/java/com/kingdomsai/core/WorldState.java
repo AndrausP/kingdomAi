@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Todo o estado salvo do mundo. Cada entidade tem UUID — nunca só o nome. */
 public final class WorldState {
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     public int schemaVersion = SCHEMA_VERSION;
     public long seed = new Random().nextLong();
@@ -39,6 +39,13 @@ public final class WorldState {
     /** Ordens físicas: quebrar, baús, fabricar (v2). */
     public Map<UUID, com.kingdomsai.core.skill.PhysicalJob> jobs = new LinkedHashMap<>();
     public int jobCounter;
+    /** Chunks que ESTE mod mantém carregados ("x:z"), para soltar certinho mesmo depois de reiniciar. */
+    public Set<String> forcedChunks = new LinkedHashSet<>();
+    /** Último tick em que cada rei foi visto (relatório "enquanto Vossa Majestade esteve fora"). */
+    public Map<UUID, Long> playerLastSeen = new HashMap<>();
+    /** Tropas e colonos fora de casa (v3). */
+    public Map<UUID, com.kingdomsai.core.military.Campaign> campaigns = new LinkedHashMap<>();
+    public int campaignCounter;
     public List<GameEvent> events = new ArrayList<>();
 
     public WorldState() {}

@@ -43,6 +43,7 @@ public final class KingdomsCore {
     private WorldPort world = WorldPort.NONE;
     /** Última posição conhecida de cada jogador (adaptador e CLI atualizam) — para "venha aqui" e "me siga". */
     private final Map<UUID, Pos> playerPositions = new HashMap<>();
+    private final Set<UUID> online = new HashSet<>();
     /** Para onde cada jogador está olhando (bloco na mira + direção) — "quebre isso", "abra esse baú". */
     private final Map<UUID, Look> playerLooks = new HashMap<>();
     private com.kingdomsai.core.port.PhysicalPort physical = com.kingdomsai.core.port.PhysicalPort.NONE;
@@ -64,6 +65,8 @@ public final class KingdomsCore {
     private final DialogueService dialogue;
     private final com.kingdomsai.core.work.WorkSystem work;
     private final com.kingdomsai.core.skill.SkillSystem skills;
+    private final com.kingdomsai.core.military.MilitarySystem warfare;
+    private final com.kingdomsai.core.event.AwayReport reports;
 
     public KingdomsCore(WorldState state, CoreConfig config) {
         this.state = state;
@@ -87,6 +90,8 @@ public final class KingdomsCore {
         this.dialogue = new DialogueService(this);
         this.work = new com.kingdomsai.core.work.WorkSystem(this);
         this.skills = new com.kingdomsai.core.skill.SkillSystem(this);
+        this.warfare = new com.kingdomsai.core.military.MilitarySystem(this);
+        this.reports = new com.kingdomsai.core.event.AwayReport(this);
         wireReactions();
     }
 
@@ -99,6 +104,32 @@ public final class KingdomsCore {
             }
             Kingdom aggressor = kingdom(e.kingdomId());
             if (aggressor != null) aggressor.honor = Text.clamp(aggressor.honor - 5, 0, 100);
+        });
+        // Crueldade se espalha: os outros reinos ficam hostis e desconfiados; o reino de origem das vítimas, inimigo mortal.
+        bus.subscribe(EventType.ATROCITY, e -> {
+            Kingdom k = kingdom(e.kingdomId());
+            if (k == null) return;
+            int dead = parseInt(e.data("dead")), own = parseInt(e.data("own"));
+            for (Kingdom o : state.kingdoms.values()) {
+                if (o == k) continue;
+                var att = diplomacy.attitude(o.id, k.id);
+                boolean victimsFromHere = o.id.toString().equals(e.data("origin"));
+                double tolerance = o.personality.tolerance / 100.0;
+                att.hostility = Text.clamp(att.hostility + (victimsFromHere ? 100 : (6 + Math.min(20, dead)) * (1.2 - tolerance * 0.5)), 0, 100);
+                att.trust = Text.clamp(att.trust - (victimsFromHere ? 100 : 10 + own), 0, 100);
+                att.fear = Text.clamp(att.fear + Math.min(15, dead), 0, 100);
+            }
+        });
+        bus.subscribe(EventType.ENSLAVED, e -> {
+            Kingdom k = kingdom(e.kingdomId());
+            if (k == null) return;
+            for (Kingdom o : state.kingdoms.values()) {
+                if (o == k) continue;
+                var att = diplomacy.attitude(o.id, k.id);
+                boolean fromHere = o.id.toString().equals(e.data("origin"));
+                att.hostility = Text.clamp(att.hostility + (fromHere ? 25 : 3), 0, 100);
+                att.trust = Text.clamp(att.trust - (fromHere ? 20 : 4), 0, 100);
+            }
         });
         bus.subscribe(EventType.BUILDING_COMPLETED, e -> {
             Kingdom k = kingdom(e.kingdomId());
@@ -115,6 +146,14 @@ public final class KingdomsCore {
         });
     }
 
+    private static int parseInt(String s) {
+        try {
+            return s == null ? 0 : Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
     // ------------------------------------------------------------------ tick
 
     /** Avança a simulação em 1 tick do jogo (chamado 20x por segundo pelo adaptador). */
@@ -126,11 +165,13 @@ public final class KingdomsCore {
             work.tickSecond();   // zera e marca quem está em cadeia (onDuty)
             skills.tickSecond(); // ordens físicas marcam por cima
             construction.tickSecond();
+            warfare.tickSecond();
         }
         if (t % config.ticks(config.economicTickSeconds) == 0) economy.tick();
         if (t % config.ticks(config.populationTickSeconds) == 0) population.tick();
         if (t % config.ticks(config.strategicTickSeconds) == 0) {
             population.strategicTick();
+            warfare.strategicTick();
             if (config.diplomacyEnabled) diplomacy.tick();
             if (config.aiKingdomsEnabled) director.tick();
         }
@@ -293,7 +334,19 @@ public final class KingdomsCore {
     }
 
     public void updatePlayerPos(UUID player, Pos pos) {
-        if (player != null && pos != null) playerPositions.put(player, pos);
+        if (player != null && pos != null) {
+            playerPositions.put(player, pos);
+            online.add(player);
+        }
+    }
+
+    /** O jogador saiu do jogo (o adaptador avisa). A última posição continua conhecida. */
+    public void playerLeft(UUID player) {
+        online.remove(player);
+    }
+
+    public boolean isOnline(UUID player) {
+        return player != null && online.contains(player);
     }
 
     public Pos playerPos(UUID player) {
@@ -361,8 +414,17 @@ public final class KingdomsCore {
         return work;
     }
 
+    /** Guerra e domínio: campanhas, batalhas, colonos, cativos, massacre/escravidão/libertação. */
+    public com.kingdomsai.core.military.MilitarySystem warfare() {
+        return warfare;
+    }
+
     public com.kingdomsai.core.skill.SkillSystem skills() {
         return skills;
+    }
+
+    public com.kingdomsai.core.event.AwayReport reports() {
+        return reports;
     }
 
     public com.kingdomsai.core.port.PhysicalPort physical() {

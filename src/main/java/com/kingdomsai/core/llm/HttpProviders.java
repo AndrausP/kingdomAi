@@ -120,6 +120,14 @@ public final class HttpProviders {
         }
     }
 
+    /** Janela de contexto para o pedido: ~3 caracteres por token + 1024 para a resposta, em múltiplos de 2048 (4k a 32k). */
+    public static int contextWindow(LlmRequest request) {
+        int chars = (request.system() == null ? 0 : request.system().length()) + (request.user() == null ? 0 : request.user().length());
+        int tokens = chars / 3 + 1024;
+        int rounded = ((tokens + 2047) / 2048) * 2048;
+        return Math.max(4096, Math.min(32768, rounded));
+    }
+
     /** Ollama local: POST /api/chat com format=json. */
     public static final class Ollama implements LlmProvider {
         @Override
@@ -136,6 +144,9 @@ public final class HttpProviders {
             body.addProperty("format", "json");
             JsonObject options = new JsonObject();
             options.addProperty("temperature", cfg.temperature);
+            // Sem num_ctx o Ollama usa a janela padrão (2–4 mil tokens) e CORTA o começo do prompt em silêncio —
+            // justamente as regras do sistema. Pede o que o prompt precisa (+ espaço para a resposta).
+            options.addProperty("num_ctx", contextWindow(request));
             body.add("options", options);
             return post(trimSlash(cfg.endpoint) + "/api/chat", body.toString(), null, cfg.timeoutMs).thenApply(resp ->
                     JsonParser.parseString(resp).getAsJsonObject().getAsJsonObject("message").get("content").getAsString());

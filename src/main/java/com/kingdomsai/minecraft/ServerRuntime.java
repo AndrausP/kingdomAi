@@ -86,6 +86,22 @@ public final class ServerRuntime {
             if (p != null && managerViewers.containsKey(player)) sendManager(p, false, lines);
         });
         core.bus().subscribeAll(this::notifyPlayers);
+        // spawn marcado com a bandeira: o rei passa a renascer ali
+        core.bus().subscribe(EventType.MARKER_SET, e -> {
+            if (!"SPAWN".equals(e.data("kind"))) return;
+            Kingdom k = core.kingdom(e.kingdomId());
+            ServerPlayer p = k == null || k.rulerPlayer == null ? null : server.getPlayerList().getPlayer(k.rulerPlayer);
+            if (p == null) return;
+            net.minecraft.core.BlockPos at = new net.minecraft.core.BlockPos(Integer.parseInt(e.data("x")), Integer.parseInt(e.data("y")), Integer.parseInt(e.data("z")));
+            p.setRespawnPosition(overworld.dimension(), at, p.getYRot(), true, false);
+            p.sendSystemMessage(ChatFormat.line("(Vossa Majestade renascerá no spawn do reino: " + at.getX() + " " + at.getY() + " " + at.getZ() + ")"));
+        });
+        // reino novo do jogador: ele ganha a Bandeira do Reino
+        core.bus().subscribe(EventType.KINGDOM_FOUNDED, e -> {
+            Kingdom k = core.kingdom(e.kingdomId());
+            ServerPlayer p = k == null || k.rulerPlayer == null ? null : server.getPlayerList().getPlayer(k.rulerPlayer);
+            if (p != null) giveMarker(p);
+        });
         this.extension = new KingdomsExtension(this);
         cli.addExtension(extension);
         int imported = extension.importNbt(null);
@@ -117,6 +133,13 @@ public final class ServerRuntime {
         return cli;
     }
 
+    /** Chat comum: "Rosalind, ataque Eldmark" / "conselho, ..." / súdito perto. Conversa entre jogadores passa direto. */
+    public void onChat(ServerPlayer p, String text) {
+        List<String> out = new ArrayList<>();
+        if (cli.chat(p.getUUID(), p.getGameProfile().getName(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()), text, out) && !out.isEmpty())
+            notify(p.getUUID(), out);
+    }
+
     // ------------------------------------------------------------------ tick
 
     public void tick() {
@@ -146,7 +169,44 @@ public final class ServerRuntime {
 
     /** O Core sabe onde cada rei está ("venha aqui", "me siga"). No Manager é a posição da câmera. */
     private void trackPlayers() {
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) track(p);
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            track(p);
+            if (p.level() != overworld) continue;
+            showMarkers(p);
+            // voltou para a vila depois de um tempo fora: relatório do que os súditos fizeram
+            List<String> report = core.reports().tick(p.getUUID(), new Pos(p.getBlockX(), p.getBlockY(), p.getBlockZ()));
+            if (!report.isEmpty()) notify(p.getUUID(), report);
+        }
+    }
+
+    public void giveMarker(ServerPlayer p) {
+        net.minecraft.world.item.ItemStack st = new net.minecraft.world.item.ItemStack(KingdomsMod.MARKER.get());
+        if (!p.getInventory().add(st)) p.drop(st, false);
+        p.sendSystemMessage(ChatFormat.line("⚑ Você recebeu a Bandeira do Reino: clique num bloco para marcar o spawn (Shift + clique troca: praça, mina, bosque)."));
+    }
+
+    /** Segurando a bandeira: cada marco do reino aparece como uma coluna de partículas (só para quem segura). */
+    private void showMarkers(ServerPlayer p) {
+        boolean holding = p.getMainHandItem().is(KingdomsMod.MARKER.get()) || p.getOffhandItem().is(KingdomsMod.MARKER.get());
+        if (!holding) return;
+        Kingdom k = core.kingdomOfPlayer(p.getUUID());
+        if (k == null) return;
+        for (var e : k.markers.entrySet()) {
+            Pos m = e.getValue();
+            if (Math.abs(m.x() - p.getX()) > 96 || Math.abs(m.z() - p.getZ()) > 96) continue;
+            var particle = switch (e.getKey()) {
+                case SPAWN -> net.minecraft.core.particles.ParticleTypes.END_ROD;
+                case GATHER -> net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER;
+                case MINE -> net.minecraft.core.particles.ParticleTypes.CRIT;
+                case FOREST -> net.minecraft.core.particles.ParticleTypes.COMPOSTER;
+            };
+            for (int i = 0; i < 4; i++)
+                overworld.sendParticles(p, particle, true, m.x() + 0.5, m.y() + 0.3 + i * 0.7, m.z() + 0.5, 2, 0.08, 0.2, 0.08, 0.0);
+        }
+    }
+
+    public void onPlayerLeave(ServerPlayer p) {
+        core.playerLeft(p.getUUID());
     }
 
     /** Posição e mira do rei: "venha aqui", "quebre esse bloco", "pegue desse baú". */
@@ -176,6 +236,7 @@ public final class ServerRuntime {
         } else if (k != null) {
             p.sendSystemMessage(Component.literal("👑 Bem-vindo de volta, rei de " + k.name + ". ").withStyle(ChatFormatting.GOLD)
                     .append(Component.literal("Pressione M para o Manager · /k help").withStyle(ChatFormatting.GRAY)));
+            for (String l : core.reports().onLogin(p.getUUID())) p.sendSystemMessage(ChatFormat.line(l));
         }
     }
 

@@ -7,6 +7,7 @@ import com.kingdomsai.core.construction.Building;
 import com.kingdomsai.core.event.EventType;
 import com.kingdomsai.core.event.GameEvent;
 import com.kingdomsai.core.kingdom.Kingdom;
+import com.kingdomsai.core.kingdom.Marker;
 import com.kingdomsai.core.npc.Npc;
 import com.kingdomsai.core.npc.NpcActivity;
 
@@ -72,6 +73,7 @@ public final class NpcScheduler {
             if (!n.materialized && i.target() != null && n.pos != null) {
                 // NPC abstrato: "teleporta" gradualmente para o destino (simulação agregada).
                 n.pos = moveTowards(n.pos, i.target(), i.activity() == NpcActivity.SUMMONED ? 6 : 4);
+                if (i.activity() == NpcActivity.IMPRISONED) n.pos = i.target();
             }
         }
     }
@@ -88,6 +90,9 @@ public final class NpcScheduler {
         if (k == null) return new Intent(NpcActivity.IDLE, n.pos, 4);
         // chamado do rei vem antes de tudo (até do sono)
         if (isSummoned(n)) return new Intent(NpcActivity.SUMMONED, n.summonTarget, n.following ? 3 : 2);
+        // em campanha (marcha, ocupação, volta) ou preso como cativo
+        Intent war = core.warfare().intentFor(n);
+        if (war != null) return war;
         // ordem física direta (quebrar, baú, fabricar) também passa na frente do sono
         Intent job = core.skills().intentFor(n);
         if (job != null) return job;
@@ -99,9 +104,10 @@ public final class NpcScheduler {
             Building home = n.homeId == null ? null : core.state().buildings.get(n.homeId);
             if (home != null && home.isComplete() && home.origin.y() != Integer.MIN_VALUE)
                 return new Intent(NpcActivity.SLEEP, home.centerPos(), 2);
-            return new Intent(NpcActivity.SLEEP, k.center.offset((h % 9) - 4, 0, (h / 9 % 9) - 4), 3);
+            return new Intent(NpcActivity.SLEEP, k.spawnPoint().offset((h % 9) - 4, 0, (h / 9 % 9) - 4), 3);
         }
-        if (evening) return new Intent(NpcActivity.SOCIALIZE, k.center.offset((h % 11) - 5, 0, (h / 11 % 7) - 3), 4);
+        if (evening)
+            return new Intent(NpcActivity.SOCIALIZE, k.marker(Marker.GATHER, k.center).offset((h % 11) - 5, 0, (h / 11 % 7) - 3), 4);
 
         // Rotina dada pelo rei (cadeia de trabalho) vem antes da rotina da profissão.
         Intent duty = core.work().intentFor(n);
@@ -125,11 +131,13 @@ public final class NpcScheduler {
             }
             case LUMBERJACK -> {
                 n.currentTask = "Cortar lenha";
-                yield new Intent(NpcActivity.WORK, workSpot(k, h + 3, 28), 8);
+                Pos forest = k.markers.get(Marker.FOREST);
+                yield new Intent(NpcActivity.WORK, forest != null ? spread(forest, h, 6) : workSpot(k, h + 3, 28), 8);
             }
             case MINER -> {
                 n.currentTask = "Extrair pedra e ferro";
-                yield new Intent(NpcActivity.WORK, workSpot(k, h + 7, 24), 6);
+                Pos mine = k.markers.get(Marker.MINE);
+                yield new Intent(NpcActivity.WORK, mine != null ? spread(mine, h, 4) : workSpot(k, h + 7, 24), 6);
             }
             case BLACKSMITH -> {
                 Building smithy = nearest(k, "smithy", n.pos);
@@ -163,6 +171,11 @@ public final class NpcScheduler {
     }
 
     /** Lugar de trabalho "na natureza" (bosque, pedreira) numa direção estável por NPC. */
+    /** Cada um num canto perto do marco (não ficam todos empilhados). */
+    private static Pos spread(Pos p, int hash, int r) {
+        return p.offset((hash % (2 * r + 1)) - r, 0, (hash / 7 % (2 * r + 1)) - r);
+    }
+
     private Pos workSpot(Kingdom k, int hash, int dist) {
         double a = (hash % 360) * Math.PI / 180.0;
         return k.center.offset((int) (Math.cos(a) * dist), 0, (int) (Math.sin(a) * dist));

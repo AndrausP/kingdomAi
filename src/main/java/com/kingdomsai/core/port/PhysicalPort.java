@@ -68,6 +68,21 @@ public interface PhysicalPort {
     /** Efeito visual/sonoro (braço, rachadura no bloco, tampa do baú...). */
     void animate(UUID npc, Pos at, Anim anim, int stage);
 
+    /**
+     * Quebrar aqui é permitido para este jogador? (claims de outros mods, proteção do spawn do servidor,
+     * borda do mundo). O súdito age em nome do rei: o que o rei não pode quebrar, ele também não.
+     */
+    boolean mayBreak(UUID player, Pos p);
+
+    /** Solta itens no chão (ex.: mochila de um súdito que morreu). */
+    void drop(Pos p, Map<String, Integer> items);
+
+    /** O chunk já é mantido carregado por outro motivo (/forceload do jogador, outro mod)? */
+    boolean chunkForced(int chunkX, int chunkZ);
+
+    /** Mantém (ou solta) um chunk carregado e funcionando mesmo sem jogador por perto. */
+    void forceChunk(int chunkX, int chunkZ, boolean on);
+
     /** Sem mundo físico (testes de outras partes, servidor sem o adaptador). */
     PhysicalPort NONE = new PhysicalPort() {
         public boolean isLoaded(Pos p) {
@@ -115,6 +130,20 @@ public interface PhysicalPort {
         }
 
         public void animate(UUID npc, Pos at, Anim anim, int stage) {
+        }
+
+        public boolean chunkForced(int chunkX, int chunkZ) {
+            return false;
+        }
+
+        public boolean mayBreak(UUID player, Pos p) {
+            return true;
+        }
+
+        public void drop(Pos p, Map<String, Integer> items) {
+        }
+
+        public void forceChunk(int chunkX, int chunkZ, boolean on) {
         }
     };
 }

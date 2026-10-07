@@ -51,7 +51,7 @@ public class ManagerScreen extends Screen {
             "cobblestone", "brick", "sandstone", "deepslate", "mud", "quartz"};
     private static final String[] MAT_NAMES = {"carvalho", "abeto", "bétula", "carvalho escuro", "acácia", "selva", "cerejeira", "mangue",
             "pedra", "pedregulho", "tijolo", "arenito", "ardósia", "barro", "quartzo"};
-    private static String savedOrder = "", savedEndpoint, savedModel;
+    private static String savedOrder = "", savedEndpoint, savedModel, configProvider;
     private static int bpScroll;
 
     private JsonObject data;
@@ -139,14 +139,40 @@ public class ManagerScreen extends Screen {
                     b -> send("found"), GOOD));
             return;
         }
+        if (!str(data, "pending").isBlank()) {
+            addRenderableWidget(new FlatButton(cx1 - 168, cy0, 80, 15, Component.literal("Confirmar"), b -> send("confirm"), BAD));
+            addRenderableWidget(new FlatButton(cx1 - 84, cy0, 80, 15, Component.literal("Desistir"), b -> send("abort"), GOOD));
+        }
         switch (tab) {
             case BUILD -> buildTab();
             case ARMY -> {
                 int y = cy0 + 20;
-                btn("Recrutar 1 (15 ouro)", "army recruit 1", cx0 + 4, y, 128, ACCENT);
-                btn("Recrutar 3", "army recruit 3", cx0 + 136, y, 80, ACCENT);
+                JsonObject k = obj(data, "kingdom");
+                btn("Convocar 1", "army recruit 1", cx0 + 4, y, 84, ACCENT);
+                btn("Convocar 3", "army recruit 3", cx0 + 92, y, 84, ACCENT);
+                btn("O comandante decide", "army recruit", cx0 + 180, y, 124, ACCENT);
                 btn("Liberar 1 → fazenda", "army release 1 fazendeiro", cx0 + 4, y + 20, 128, DIM);
                 btn("Liberar 3 → fazenda", "army release 3 fazendeiro", cx0 + 136, y + 20, 128, DIM);
+                boolean live = false;
+                for (JsonElement e : arr(k, "campaigns")) live |= e.getAsJsonObject().get("live").getAsBoolean();
+                if (live) btn("Recuar a tropa", "retreat", cx0 + 268, y + 20, 100, WARN);
+                // vizinhos: atacar (o comandante escolhe quem vai e o objetivo)
+                int ny = cy1 - 44;
+                int nx = cx0 + 4;
+                for (JsonElement e : arr(data, "kingdoms")) {
+                    JsonObject o = e.getAsJsonObject();
+                    if (o.get("me").getAsBoolean() || o.get("pop").getAsInt() == 0) continue;
+                    String first = o.get("name").getAsString();
+                    int w = Math.min(150, font.width("Atacar " + first) + 14);
+                    btn("Atacar " + first, "attack " + first, nx, ny, w, BAD);
+                    nx += w + 4;
+                    if (nx > cx1 - 120) break;
+                }
+                if (k.get("captives").getAsInt() > 0) {
+                    btn("Escravizar cativos → mina", "enslave cativos minerador", cx0 + 4, cy1 - 24, 160, WARN);
+                    btn("Libertar cativos", "free cativos", cx0 + 168, cy1 - 24, 110, GOOD);
+                } else if (k.get("enslaved").getAsInt() > 0)
+                    btn("Libertar escravizados", "free todos", cx0 + 4, cy1 - 24, 140, GOOD);
             }
             case ECONOMY -> {
                 String[][] jobs = {{"Fazendeiro", "farmer"}, {"Lenhador", "lumberjack"}, {"Minerador", "miner"},
@@ -158,8 +184,17 @@ public class ManagerScreen extends Screen {
             case DIPLOMACY -> diplomacyTab();
             case POPULATION -> populationTab();
             case TERRITORY -> {
-                btn("Expandir 1 célula (40 ouro)", "claim 1", cx0 + 4, cy0 + 60, 160, ACCENT);
-                btn("Expandir 3 células", "claim 3", cx0 + 168, cy0 + 60, 110, ACCENT);
+                btn("Reivindicar 1 (grátis)", "claim 1", cx0 + 4, cy0 + 60, 140, ACCENT);
+                btn("Reivindicar 3", "claim 3", cx0 + 148, cy0 + 60, 96, ACCENT);
+                btn("Colonizar onde estou (3)", "settle 3", cx0 + 248, cy0 + 60, 150, GOOD);
+                int ny = cy0 + 116;
+                for (JsonElement e : arr(data, "kingdoms")) {
+                    JsonObject o = e.getAsJsonObject();
+                    if (o.get("me").getAsBoolean() || o.get("pop").getAsInt() == 0) continue;
+                    btn("Invadir", "attack " + o.get("name").getAsString(), cx0 + 250, ny - 3, 60, BAD);
+                    ny += 12;
+                    if (ny > cy1 - 20) break;
+                }
             }
             case LAWS -> {
                 JsonObject k = obj(data, "kingdom");
@@ -300,45 +335,74 @@ public class ManagerScreen extends Screen {
                 b -> send("config set ai.enabled " + !enabled), enabled ? GOOD : BAD);
         toggle.active = can;
         addRenderableWidget(toggle);
-        String[] providers = {"ollama", "openai", "mock"};
+        String[] providers = {"ollama", "openai", "claude_code", "mock"};
         int pi = Math.max(0, Arrays.asList(providers).indexOf(provider));
-        FlatButton prov = new FlatButton(x + 74, y, 90, 14, Component.literal(provider + " ▸"),
-                b -> send("config set ai.provider " + providers[(pi + 1) % providers.length]), BLUE);
+        boolean claude = provider.equals("claude_code");
+        boolean canClaude = data.has("canClaude") && data.get("canClaude").getAsBoolean();
+        String nextProvider = providers[(pi + 1) % providers.length];
+        if (nextProvider.equals("claude_code") && !canClaude) nextProvider = providers[(pi + 2) % providers.length];
+        String np = nextProvider;
+        FlatButton prov = new FlatButton(x + 74, y, 90, 14, Component.literal((claude ? "Claude Code" : provider) + " ▸"),
+                b -> send("config set ai.provider " + np), claude ? ACCENT : BLUE);
         prov.active = can;
-        prov.setTooltip(Tooltip.create(Component.literal("ollama = local · openai = qualquer servidor compatível (LM Studio, vLLM, OpenAI) · mock = só regras")));
+        prov.setTooltip(Tooltip.create(Component.literal("ollama = local · openai = qualquer servidor compatível (LM Studio, vLLM, OpenAI) · "
+                + "claude_code = usa o Claude Code instalado no PC (login da sua conta, sem MCP) · mock = só regras")));
         addRenderableWidget(prov);
+        // Os campos mudam com o provider: Ollama/OpenAI usam endereço + modelo; o Claude Code usa o comando + apelido do modelo.
+        if (!provider.equals(configProvider)) {
+            savedEndpoint = null;
+            savedModel = null;
+            configProvider = provider;
+        }
+        String endpointKey = claude ? "ai.claude_command" : "ai.endpoint";
+        String modelKey = claude ? "ai.claude_model" : "ai.model";
+        boolean canField = can && (!claude || canClaude);
         y += 20;
-        endpointBox = new EditBox(font, x, y, w, 14, Component.literal("Endpoint"));
-        endpointBox.setMaxLength(200);
-        endpointBox.setValue(savedEndpoint != null ? savedEndpoint : str(cfg, "ai.endpoint"));
+        endpointBox = new EditBox(font, x, y, w, 14, Component.literal(claude ? "Comando" : "Endpoint"));
+        endpointBox.setMaxLength(260);
+        endpointBox.setValue(savedEndpoint != null ? savedEndpoint : str(cfg, endpointKey));
         endpointBox.setResponder(v -> savedEndpoint = v);
-        endpointBox.setEditable(can);
+        endpointBox.setEditable(canField);
+        if (claude) endpointBox.setTooltip(Tooltip.create(Component.literal(
+                "\"claude\" se ele abre no terminal. Senão o caminho completo: C:\\Users\\voce\\.local\\bin\\claude.exe (instalador) "
+                        + "ou C:\\Users\\voce\\AppData\\Roaming\\npm\\claude.cmd (npm).")));
         addRenderableWidget(endpointBox);
         FlatButton se = new FlatButton(x + w + 4, y, 60, 14, Component.literal("Salvar"), b -> {
-            send("config set ai.endpoint " + endpointBox.getValue().trim());
+            send("config set " + endpointKey + " " + endpointBox.getValue().trim());
             savedEndpoint = null;
         }, GOOD);
-        se.active = can;
+        se.active = canField;
         addRenderableWidget(se);
         y += 20;
         modelBox = new EditBox(font, x, y, w, 14, Component.literal("Modelo"));
         modelBox.setMaxLength(120);
-        modelBox.setValue(savedModel != null ? savedModel : str(cfg, "ai.model"));
+        modelBox.setValue(savedModel != null ? savedModel : str(cfg, modelKey));
         modelBox.setResponder(v -> savedModel = v);
-        modelBox.setEditable(can);
+        modelBox.setEditable(canField);
         addRenderableWidget(modelBox);
         FlatButton sm = new FlatButton(x + w + 4, y, 60, 14, Component.literal("Salvar"), b -> {
-            send("config set ai.model " + modelBox.getValue().trim());
+            send("config set " + modelKey + " " + modelBox.getValue().trim());
             savedModel = null;
         }, GOOD);
-        sm.active = can;
+        sm.active = canField;
         addRenderableWidget(sm);
         y += 18;
-        addRenderableWidget(new FlatButton(x, y, 110, 14, Component.literal("Listar modelos"), b -> send("config models"), BLUE));
+        if (claude) {
+            FlatButton login = new FlatButton(x, y, 110, 14, Component.literal("Login do Claude"), b -> send("config login"), ACCENT);
+            boolean local = data.has("localHost") && data.get("localHost").getAsBoolean();
+            login.active = canField && local;
+            login.setTooltip(Tooltip.create(Component.literal(local
+                    ? "Abre uma janela do terminal FORA do jogo com \"claude auth login\" (o navegador abre para entrar na sua conta). Só precisa uma vez."
+                    : "Servidor dedicado: rode \"claude auth login\" no terminal do servidor.")));
+            addRenderableWidget(login);
+        } else addRenderableWidget(new FlatButton(x, y, 110, 14, Component.literal("Listar modelos"), b -> send("config models"), BLUE));
         addRenderableWidget(new FlatButton(x + 114, y, 90, 14, Component.literal("Testar IA"), b -> send("config test"), WARN));
         y += 18;
-        // modelos disponíveis (clique escolhe)
-        JsonArray models = arr(data, "models");
+        // modelos disponíveis (clique escolhe). Claude Code: os apelidos fixos, sem consultar nada.
+        JsonArray models = new JsonArray();
+        if (claude) for (String m : new String[]{"haiku", "sonnet", "opus", "fable"}) models.add(m);
+        else models = arr(data, "models");
+        String currentModel = str(cfg, modelKey);
         int mx = x;
         for (JsonElement e : models) {
             String m = e.getAsString();
@@ -350,9 +414,15 @@ public class ManagerScreen extends Screen {
             if (y > cy0 + 120) break;
             FlatButton mb = new FlatButton(mx, y, mw, 14, Component.literal(m), b -> {
                 savedModel = null;
-                send("config set ai.model " + m);
-            }, m.equals(str(cfg, "ai.model")) ? GOOD : DIM).selected(m.equals(str(cfg, "ai.model")));
-            mb.active = can;
+                send("config set " + modelKey + " " + m);
+            }, m.equals(currentModel) ? GOOD : DIM).selected(m.equals(currentModel));
+            mb.active = canField;
+            if (claude) mb.setTooltip(Tooltip.create(Component.literal(switch (m) {
+                case "haiku" -> "Rápido e econômico (~5 s): o melhor para conversa com súditos.";
+                case "sonnet" -> "Equilibrado: ordens complexas e cadeias de trabalho (~10–20 s).";
+                case "opus" -> "O mais capaz e o mais lento: conselho estratégico.";
+                default -> "Fable: modelo de alto nível; gasta mais da sua cota.";
+            })));
             addRenderableWidget(mb);
             mx += mw + 3;
         }
@@ -574,6 +644,7 @@ public class ManagerScreen extends Screen {
                 case RELIGION -> drawReligion(g);
                 case CONFIG -> drawConfig(g);
             }
+            drawPending(g);
             g.disableScissor();
         }
         // feedback do último comando
@@ -843,28 +914,48 @@ public class ManagerScreen extends Screen {
     }
 
     private void drawArmy(GuiGraphics g) {
-        title(g, "Exército");
+        title(g, "Exército — não custa ouro, custa comida");
         int y = cy0 + 64;
         JsonObject k = obj(data, "kingdom");
-        g.drawString(font, "Militares (soldados + guardas): " + k.get("military").getAsInt(), cx0, y, TEXT);
+        g.drawString(font, "Militares: " + k.get("military").getAsInt() + String.format(Locale.ROOT, "  ·  comem %.0f por ciclo", k.get("armyFood").getAsDouble())
+                + (str(k, "commander").isBlank() ? "" : "  ·  decide: " + str(k, "commander")), cx0, y, TEXT);
         y += 12;
         for (JsonElement e : arr(data, "npcs")) {
             JsonObject n = e.getAsJsonObject();
             String p = n.get("prof").getAsString();
             if (!n.get("mine").getAsBoolean() || !(p.equals("SOLDIER") || p.equals("GUARD"))) continue;
-            g.drawString(font, "  " + n.get("name").getAsString() + " — " + n.get("title").getAsString() + " · " + n.get("act").getAsString(), cx0, y, DIM);
+            if (y > cy0 + 120) break;
+            g.drawString(font, font.plainSubstrByWidth("  " + n.get("name").getAsString() + " — " + n.get("title").getAsString() + " · " + n.get("act").getAsString(), cx1 - cx0), cx0, y, DIM);
             y += 10;
         }
-        y += 6;
-        g.drawString(font, "Vizinhos:", cx0, y, ACCENT);
-        y += 11;
-        for (JsonElement e : arr(data, "kingdoms")) {
-            JsonObject o = e.getAsJsonObject();
-            if (o.get("me").getAsBoolean()) continue;
-            g.drawString(font, "  " + o.get("name").getAsString() + ": " + o.get("mil").getAsInt() + " militares", cx0, y, TEXT);
+        y += 4;
+        for (JsonElement e : arr(k, "campaigns")) {
+            JsonObject c = e.getAsJsonObject();
+            boolean live = c.get("live").getAsBoolean();
+            String line = (live ? "⚔ " : "") + "#" + c.get("n").getAsInt() + " " + c.get("kind").getAsString() + " → " + c.get("target").getAsString()
+                    + " · " + c.get("status").getAsString() + (c.get("eta").getAsLong() > 0 ? " (" + c.get("eta").getAsLong() + " s)" : "")
+                    + " · " + c.get("people").getAsInt() + " pessoas";
+            g.drawString(font, font.plainSubstrByWidth(line, cx1 - cx0), cx0, y, live ? WARN : MUTED);
             y += 10;
+            String res = c.get("result").getAsString();
+            if (!res.isBlank() && y < cy1 - 60) {
+                g.drawString(font, font.plainSubstrByWidth("   " + res, cx1 - cx0), cx0, y, res.startsWith("✓") ? GOOD : BAD);
+                y += 10;
+            }
+            if (y > cy1 - 60) break;
         }
-        g.drawString(font, "Legiões, batalhas e logística chegam na Fase 9.", cx0, cy1 - 26, MUTED);
+        int cap = k.get("captives").getAsInt(), sl = k.get("enslaved").getAsInt();
+        if (cap + sl > 0)
+            g.drawString(font, "Cativos: " + cap + " · Escravizados: " + sl + String.format(Locale.ROOT, " · Infâmia %.0f", k.get("infamy").getAsDouble()),
+                    cx0, cy1 - 36, WARN);
+    }
+
+    /** Ordem irreversível esperando "confirmo" (massacre, ataque sem piedade). */
+    private void drawPending(GuiGraphics g) {
+        String p = str(data, "pending");
+        if (p.isBlank()) return;
+        g.fill(cx0 - 3, cy0 - 1, cx1 + 1, cy0 + 16, 0xEE3a0d0d);
+        g.drawString(font, font.plainSubstrByWidth(p, cx1 - cx0 - 176), cx0 + 2, cy0 + 4, BAD);
     }
 
     private void drawEconomy(GuiGraphics g) {
@@ -958,16 +1049,20 @@ public class ManagerScreen extends Screen {
     private void drawTerritory(GuiGraphics g) {
         int y = title(g, "Território — células de " + data.get("cellSize").getAsInt() + "×" + data.get("cellSize").getAsInt() + " blocos");
         JsonObject k = obj(data, "kingdom");
-        g.drawString(font, "Células: " + k.get("cells").getAsInt() + String.format(Locale.ROOT, "  ·  Área: %.2f km²", k.get("area").getAsDouble()), cx0, y, TEXT);
+        g.drawString(font, "Células: " + k.get("cells").getAsInt() + "/" + k.get("claimLimit").getAsInt()
+                + String.format(Locale.ROOT, "  ·  Área: %.2f km²", k.get("area").getAsDouble()), cx0, y, TEXT);
         y += 12;
-        g.drawString(font, "Expandir cria fronteiras: vizinhos expansionistas ficam hostis.", cx0, y, DIM);
-        y += 70;
+        g.drawString(font, font.plainSubstrByWidth("Terra livre é grátis até o limite (30 + 2 por morador + 3 por militar). Além disso, se toma:", cx1 - cx0), cx0, y, DIM);
+        y += 10;
+        g.drawString(font, font.plainSubstrByWidth("colonos vão morar lá (Colonizar) ou tropas invadem (Invadir) — inclusive terra de outro reino.", cx1 - cx0), cx0, y, DIM);
+        y += 60;
         for (JsonElement e : arr(data, "kingdoms")) {
             JsonObject o = e.getAsJsonObject();
             if (o.get("me").getAsBoolean()) continue;
             double dx = o.get("cx").getAsInt() - k.get("cx").getAsInt(), dz = o.get("cz").getAsInt() - k.get("cz").getAsInt();
-            g.drawString(font, o.get("name").getAsString() + String.format(Locale.ROOT, " — a %.0f blocos", Math.hypot(dx, dz)), cx0, y, TEXT);
-            y += 10;
+            if (o.get("pop").getAsInt() == 0) continue;
+            g.drawString(font, o.get("name").getAsString() + String.format(Locale.ROOT, " — a %.0f blocos · %d militares", Math.hypot(dx, dz), o.get("mil").getAsInt()), cx0, y, TEXT);
+            y += 12;
         }
     }
 
@@ -996,13 +1091,17 @@ public class ManagerScreen extends Screen {
         boolean can = data.has("canConfigure") && data.get("canConfigure").getAsBoolean();
         title(g, "Configuração da IA e do jogo" + (can ? "" : " — só o dono do mundo pode alterar"));
         int x = cx0 + 4, y = cy0 + 21;
+        boolean claude = "claude_code".equals(str(cfg, "ai.provider"));
         g.drawString(font, "IA / Provider", x, y, DIM);
-        g.drawString(font, "Endpoint", x, y + 23, DIM);
+        g.drawString(font, claude ? "Comando" : "Endpoint", x, y + 23, DIM);
         g.drawString(font, "Modelo", x, y + 43, DIM);
         g.drawString(font, "Ações", x, y + 61, DIM);
         String test = str(data, "lastTest");
         if (!test.isBlank())
             g.drawString(font, font.plainSubstrByWidth(test, cx1 - x - 4), x, cy0 + 112, test.startsWith("✓") ? GOOD : test.startsWith("✗") ? BAD : WARN);
+        else if (claude)
+            g.drawString(font, font.plainSubstrByWidth("Sem MCP: o jogo abre o claude em segundo plano, sem ferramentas. 1ª vez: Login do Claude → Testar IA.",
+                    cx1 - x - 4), x, cy0 + 112, MUTED);
         int ry = configRows - 34;
         label(g, cx0 + 4, ry, "Temperatura", str(cfg, "ai.temperature"));
         label(g, cx0 + 154, ry, "Timeout ms", str(cfg, "ai.timeout_ms"));

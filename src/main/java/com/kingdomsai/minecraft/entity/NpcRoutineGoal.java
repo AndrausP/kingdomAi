@@ -81,7 +81,8 @@ public class NpcRoutineGoal extends Goal {
         double dist = Math.sqrt(mob.distanceToSqr(target.getX() + 0.5, target.getY(), target.getZ() + 0.5));
         if (dist > radius + 1) {
             if (mob.getNavigation().isDone() || mob.tickCount % 60 == 0) {
-                double speed = n.activity == NpcActivity.SUMMONED ? 0.8 : n.activity == NpcActivity.PATROL ? 0.6 : 0.55;
+                double speed = n.activity == NpcActivity.SUMMONED ? 0.8 : n.activity == NpcActivity.MARCH ? 0.75
+                        : n.activity == NpcActivity.PATROL ? 0.6 : 0.55;
                 mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
             }
             // anti-travamento: se não progride por 30s, teleporta para perto do destino

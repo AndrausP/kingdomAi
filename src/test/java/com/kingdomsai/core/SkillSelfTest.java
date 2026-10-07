@@ -283,6 +283,12 @@ public final class SkillSelfTest {
         final List<String> anims = new ArrayList<>();
         final List<Pos> broken = new ArrayList<>();
         int leafCounter;
+        /** null = tudo carregado; senão só perto do "jogador" (raio viewRadius) e os chunks forçados. */
+        Pos viewer;
+        int viewRadius = 128;
+        final Set<String> forced = new HashSet<>();
+        final Set<String> playerForced = new HashSet<>();
+        int forceCalls;
 
         String id(Pos p) {
             String s = blocks.get(p);
@@ -332,7 +338,10 @@ public final class SkillSelfTest {
         }
 
         public boolean isLoaded(int x, int z) {
-            return Math.abs(x) < 1000 && Math.abs(z) < 1000;
+            if (Math.abs(x) >= 1000 || Math.abs(z) >= 1000) return false;
+            if (viewer == null) return true;
+            String key = Math.floorDiv(x, 16) + ":" + Math.floorDiv(z, 16);
+            return viewer.distXZ(new Pos(x, 64, z)) <= viewRadius || forced.contains(key) || playerForced.contains(key);
         }
 
         public int surfaceY(int x, int z) {
@@ -439,6 +448,29 @@ public final class SkillSelfTest {
 
         public void animate(UUID npc, Pos at, Anim anim, int stage) {
             if (anim != Anim.SWING && anim != Anim.CRACK) anims.add(anim.name());
+        }
+
+        /** Blocos "protegidos por claim" (outro mod) e itens soltos no chão. */
+        final Set<Pos> claimed = new HashSet<>();
+        final Map<String, Integer> dropped = new TreeMap<>();
+
+        public boolean mayBreak(UUID player, Pos p) {
+            return !claimed.contains(p);
+        }
+
+        public void drop(Pos p, Map<String, Integer> items) {
+            items.forEach((k, v) -> dropped.merge(k, v, Integer::sum));
+        }
+
+        public boolean chunkForced(int chunkX, int chunkZ) {
+            String k = chunkX + ":" + chunkZ;
+            return forced.contains(k) || playerForced.contains(k);
+        }
+
+        public void forceChunk(int chunkX, int chunkZ, boolean on) {
+            forceCalls++;
+            if (on) forced.add(chunkX + ":" + chunkZ);
+            else forced.remove(chunkX + ":" + chunkZ);
         }
     }
 }

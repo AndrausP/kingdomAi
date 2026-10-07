@@ -64,6 +64,8 @@ public final class PhysicalJob {
     public String name = "";
     public Status status = Status.ACTIVE;
     public String reason = "";
+    /** Recado final para o rei (ex.: "deixei no baú do armazém"). */
+    public String note = "";
     public List<Task> tasks = new ArrayList<>();
     public int cursor;
     public long createdTick;

@@ -189,6 +189,31 @@ public final class CoreSelfTest {
         passed += sk[0];
         failed += sk[1];
 
+        // 13. Persistência: ordens continuam com o rei longe
+        int[] ps = PersistenceSelfTest.run();
+        passed += ps[0];
+        failed += ps[1];
+
+        // 14. Bandeira do Reino (marcos)
+        int[] mk = MarkerSelfTest.run();
+        passed += mk[0];
+        failed += mk[1];
+
+        // 15. Validação final: segurança, compatibilidade, migração
+        int[] va = ValidationSelfTest.run();
+        passed += va[0];
+        failed += va[1];
+
+        // 16. Guerra e domínio: exército, terra, colonos, batalhas, cativos, escravidão, massacre
+        int[] mi = MilitarySelfTest.run();
+        passed += mi[0];
+        failed += mi[1];
+
+        // 17. Claude Code como IA (processo falso e script)
+        int[] cc = ClaudeCodeSelfTest.run();
+        passed += cc[0];
+        failed += cc[1];
+
         System.out.println("\n" + passed + " passaram, " + failed + " falharam.");
         System.exit(failed == 0 ? 0 : 1);
     }

@@ -1,6 +1,7 @@
 package com.kingdomsai.minecraft;
 
 import com.kingdomsai.core.CoreConfig;
+import com.kingdomsai.core.llm.ClaudeCodeProvider;
 import com.kingdomsai.core.llm.LlmConfig;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
@@ -20,6 +21,9 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.IntValue AI_MAX_RETRIES;
     public static final ModConfigSpec.IntValue AI_MAX_CALLS_PER_MINUTE;
     public static final ModConfigSpec.BooleanValue AI_FALLBACK_TO_RULES;
+    public static final ModConfigSpec.ConfigValue<String> AI_CLAUDE_COMMAND;
+    public static final ModConfigSpec.ConfigValue<String> AI_CLAUDE_MODEL;
+    public static final ModConfigSpec.BooleanValue AI_CHAT_ORDERS;
 
     // [simulation]
     public static final ModConfigSpec.IntValue STRATEGIC_TICK;
@@ -33,6 +37,8 @@ public final class KingdomsConfig {
     public static final ModConfigSpec.IntValue RIVAL_KINGDOMS;
     public static final ModConfigSpec.IntValue RIVAL_DISTANCE;
     public static final ModConfigSpec.IntValue MAX_NPCS_PER_KINGDOM;
+    public static final ModConfigSpec.BooleanValue KEEP_ORDER_CHUNKS;
+    public static final ModConfigSpec.IntValue MAX_FORCED_CHUNKS;
 
     // [construction]
     public static final ModConfigSpec.BooleanValue CONSTRUCTION_ENABLED;
@@ -51,7 +57,8 @@ public final class KingdomsConfig {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
         b.push("ai");
         AI_ENABLED = b.comment("Liga a LLM. Desligada, tudo funciona por regras (Utility AI + interpretador).").define("enabled", true);
-        AI_PROVIDER = b.comment("ollama | openai (qualquer servidor compatível: LM Studio, vLLM...) | mock (somente regras)").define("provider", "ollama");
+        AI_PROVIDER = b.comment("ollama | openai (qualquer servidor compatível: LM Studio, vLLM...) | claude_code (usa o login do Claude Code do PC) | mock (somente regras)")
+                .define("provider", "ollama");
         AI_MODEL = b.define("model", "qwen2.5:7b");
         AI_ENDPOINT = b.comment("Ollama: http://127.0.0.1:11434 · LM Studio: http://127.0.0.1:1234").define("endpoint", "http://127.0.0.1:11434");
         AI_API_KEY = b.comment("Só para provedores online.").define("api_key", "");
@@ -61,6 +68,13 @@ public final class KingdomsConfig {
         AI_MAX_RETRIES = b.defineInRange("max_retries", 2, 0, 5);
         AI_MAX_CALLS_PER_MINUTE = b.defineInRange("max_calls_per_minute", 20, 1, 600);
         AI_FALLBACK_TO_RULES = b.comment("Se a LLM falhar, responde pelas regras em vez de ficar mudo.").define("fallback_to_rules", true);
+        AI_CLAUDE_COMMAND = b.comment("provider = claude_code: o executável do Claude Code. 'claude' se estiver no PATH; senão o caminho completo",
+                        "(ex.: C:\\Users\\voce\\.local\\bin\\claude.exe ou C:\\Users\\voce\\AppData\\Roaming\\npm\\claude.cmd). Só aceita o executável claude.")
+                .define("claude_command", "claude");
+        AI_CLAUDE_MODEL = b.comment("provider = claude_code: haiku (rápido, recomendado) · sonnet · opus · fable — ou o nome completo do modelo.")
+                .define("claude_model", "haiku");
+        AI_CHAT_ORDERS = b.comment("Chat comum vira fala com os súditos: \"Rosalind, ataque Eldmark\", \"conselho, construam uma casa\", ou o súdito mais perto. Sem /k.")
+                .define("chat_orders", true);
         b.pop();
 
         b.push("simulation");
@@ -77,6 +91,10 @@ public final class KingdomsConfig {
         RIVAL_KINGDOMS = b.defineInRange("rival_kingdoms", 2, 0, 8);
         RIVAL_DISTANCE = b.defineInRange("rival_distance", 320, 160, 3000);
         MAX_NPCS_PER_KINGDOM = b.defineInRange("max_npcs_per_kingdom", 60, 5, 500);
+        KEEP_ORDER_CHUNKS = b.comment("Ordens com as mãos (quebrar, baús, fabricar) continuam com o rei longe: mantém carregados só os chunks onde o súdito trabalha.")
+                .define("keep_order_chunks_loaded", true);
+        MAX_FORCED_CHUNKS = b.comment("Máximo de chunks mantidos carregados à distância (desempenho). Ordens além disso esperam na fila.")
+                .defineInRange("max_forced_chunks", 16, 0, 256);
         b.pop();
 
         b.push("construction");
@@ -119,6 +137,9 @@ public final class KingdomsConfig {
         KEYS.put("ai.max_retries", AI_MAX_RETRIES);
         KEYS.put("ai.max_calls_per_minute", AI_MAX_CALLS_PER_MINUTE);
         KEYS.put("ai.fallback_to_rules", AI_FALLBACK_TO_RULES);
+        KEYS.put("ai.claude_command", AI_CLAUDE_COMMAND);
+        KEYS.put("ai.claude_model", AI_CLAUDE_MODEL);
+        KEYS.put("ai.chat_orders", AI_CHAT_ORDERS);
         KEYS.put("simulation.npc_detail_radius", NPC_DETAIL_RADIUS);
         KEYS.put("simulation.max_active_npcs", MAX_ACTIVE_NPCS);
         KEYS.put("simulation.auto_found_on_join", AUTO_FOUND_ON_JOIN);
@@ -126,6 +147,8 @@ public final class KingdomsConfig {
         KEYS.put("simulation.rival_kingdoms", RIVAL_KINGDOMS);
         KEYS.put("simulation.economic_tick_seconds", ECONOMIC_TICK);
         KEYS.put("simulation.strategic_tick_seconds", STRATEGIC_TICK);
+        KEYS.put("simulation.keep_order_chunks_loaded", KEEP_ORDER_CHUNKS);
+        KEYS.put("simulation.max_forced_chunks", MAX_FORCED_CHUNKS);
         KEYS.put("construction.enabled", CONSTRUCTION_ENABLED);
         KEYS.put("construction.builder_blocks_per_second", BUILDER_BLOCKS_PER_SECOND);
         KEYS.put("construction.max_blocks_per_tick", MAX_BLOCKS_PER_TICK);
@@ -151,8 +174,12 @@ public final class KingdomsConfig {
         } catch (NumberFormatException e) {
             return "Valor inválido para " + key + ": " + raw;
         }
-        if (key.equals("ai.provider") && !String.valueOf(val).matches("ollama|openai|mock"))
-            return "Provider deve ser ollama, openai ou mock.";
+        if (key.equals("ai.provider") && !String.valueOf(val).matches("ollama|openai|claude_code|mock"))
+            return "Provider deve ser ollama, openai, claude_code ou mock.";
+        if (key.equals("ai.claude_command") && !ClaudeCodeProvider.isClaudeCommand(String.valueOf(val)))
+            return "Só o executável do Claude Code: claude, claude.exe, claude.cmd ou o caminho completo até ele.";
+        if (key.equals("ai.claude_model") && !String.valueOf(val).matches("[A-Za-z0-9._\\-\\[\\]]{1,64}"))
+            return "Modelo inválido. Use haiku, sonnet, opus ou fable.";
         if (!v.getSpec().test(val)) return "Valor fora da faixa permitida para " + key + ".";
         v.set(val);
         v.save();
@@ -182,6 +209,8 @@ public final class KingdomsConfig {
         c.aiKingdomsEnabled = AI_KINGDOMS.get();
         c.constructionEnabled = CONSTRUCTION_ENABLED.get();
         c.diplomacyEnabled = DIPLOMACY_ENABLED.get();
+        c.keepOrderChunksLoaded = KEEP_ORDER_CHUNKS.get();
+        c.maxForcedChunks = MAX_FORCED_CHUNKS.get();
         return c;
     }
 
@@ -198,6 +227,8 @@ public final class KingdomsConfig {
         c.maxRetries = AI_MAX_RETRIES.get();
         c.maxCallsPerMinute = AI_MAX_CALLS_PER_MINUTE.get();
         c.fallbackToRules = AI_FALLBACK_TO_RULES.get();
+        c.claudeCommand = AI_CLAUDE_COMMAND.get();
+        c.claudeModel = AI_CLAUDE_MODEL.get();
         return c;
     }
 }

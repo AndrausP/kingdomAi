@@ -274,7 +274,7 @@ public final class JobPlanner {
             return;
         }
         Set<String> tools = tools(npc);
-        int prot = 0, foreign = 0, chests = 0, fluid = 0, unbreakable = 0, noDrop = 0;
+        int prot = 0, foreign = 0, chests = 0, fluid = 0, unbreakable = 0, noDrop = 0, claimed = 0;
         String protName = null, foreignName = null, missingTool = null;
         boolean stairs = kind.equals("dig") && h >= 3 && Math.max(w, d) >= 2;
         List<Pos> queue = new ArrayList<>();
@@ -303,6 +303,10 @@ public final class JobPlanner {
                         chests++;
                         continue;
                     }
+                    if (!port.mayBreak(player, p)) {
+                        claimed++;
+                        continue;
+                    }
                     if (!info.breakable() || info.hardness() < 0) {
                         unbreakable++;
                         continue;
@@ -327,13 +331,15 @@ public final class JobPlanner {
             return;
         }
         if (queue.isEmpty()) {
-            errors.add(prot > 0 ? "Isso é parte de «" + protName + "»: não destruo construções do reino."
+            errors.add(claimed > 0 && prot == 0 ? "Essa área é protegida (claim de outro mod, spawn do servidor ou borda do mundo): Vossa Majestade não pode quebrar ali, e eu também não."
+                    : prot > 0 ? "Isso é parte de «" + protName + "»: não destruo construções do reino."
                     : chests > 0 ? "Só há baús/fornalhas aí — não quebro contêineres (os itens se perderiam)."
                     : fluid > 0 ? "É água/lava ou está colado nelas: quebrar inundaria a área."
                     : "Não há nada que eu possa quebrar aí.");
             return;
         }
         if (prot > 0) warnings.add(prot + " bloco(s) de «" + protName + "» foram preservados.");
+        if (claimed > 0) warnings.add(claimed + " bloco(s) protegidos (claim/spawn do servidor) ficam.");
         if (chests > 0) warnings.add(chests + " baú(s)/fornalha(s) ficam onde estão (contêineres não são quebrados).");
         if (fluid > 0) warnings.add(fluid + " bloco(s) perto de água/lava ficam (evita inundação).");
         if (unbreakable > 0) warnings.add(unbreakable + " bloco(s) indestrutíveis ignorados.");
@@ -402,6 +408,11 @@ public final class JobPlanner {
             errors.add("Isso não parece uma árvore (tronco sem folhas) — pode ser parte de uma construção.");
             return;
         }
+        for (Pos p : logs)
+            if (!port.mayBreak(player, p)) {
+                errors.add("Essa árvore está numa área protegida (claim de outro mod ou spawn do servidor).");
+                return;
+            }
         for (Pos p : logs)
             if (protectedBy(p) != null) {
                 errors.add("Essa madeira é parte de «" + protectedBy(p).blueprint().displayName() + "».");
